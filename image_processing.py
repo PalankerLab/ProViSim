@@ -5,11 +5,35 @@ This module contains functions for processing images such as spatial filtering a
 """
 
 import numpy as np
-
 from PIL import Image
 from skimage.filters import window
 
 from utils import validate_gray_img
+
+def crop_to_square(path: str) -> np.ndarray:
+    """
+    Loads an image from `path`, converts to NumPy array,
+    and crops it to a centered square if not already square.
+    """
+    # load and ensure numpy array
+    img = Image.open(path).convert("RGB")
+    arr = np.array(img)
+
+    # check if already square
+    h, w = arr.shape[:2]
+    if h == w:
+        return arr
+
+    # else, crop to square (crop the larger dimension)
+    if h > w:
+        offset = (h - w) // 2
+        arr = arr[offset:offset + w, :]
+    else:
+        offset = (w - h) // 2
+        arr = arr[:, offset:offset + h]
+
+    # return cropped image
+    return arr
 
 def rgb_to_gray(image_path: str=None, img=None) -> np.ndarray:
     """
@@ -31,17 +55,19 @@ def rgb_to_gray(image_path: str=None, img=None) -> np.ndarray:
         IOError: If the file at the given path is not a valid image file.
     """
     try:
-        # Open the image and convert to grayscale ('L' mode represents luminosity)
+        # open the image
         if img is None and image_path is not None:
           img = Image.open(image_path)
-        if img is not None and image_path is None:
-          img = Image.fromarray(img)
-        if img is None and image_path is None:
+        elif img is not None and image_path is None:
+            img = Image.fromarray(img)
+        else:
           raise ValueError("Either image_path or img must be provided.")
+
+        # convert to grayscale ('L' mode represents luminosity)
         gray_img = np.array(img.convert('L'))
 
+        # Normalize pixel values to the range [0, 1]
         if gray_img.dtype == np.uint8:
-            # Normalize pixel values to the range [0, 1]
             gray_img = gray_img.astype(np.float32) / 255.0
 
         # Validate the grayscale image (ensure values are within the expected range)
