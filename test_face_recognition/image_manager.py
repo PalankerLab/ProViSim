@@ -43,12 +43,11 @@ class ImageManager:
 				# extract components from match
 				person_id, session_num, suffix = match.groups()
 
-				# skip images where session_num starts with 2
-				if session_num.startswith('2'):
-					continue
-
 				# determine gender
 				gender = 'M' if person_id.startswith('MM') else 'F'
+
+				# extract session number
+				session_num = int(session_num[0])
 
 				# determine if suffix is emotion (pure letters) or orientation (contains R/L/F with numbers)
 				if re.match(r'^[A-Z]+$', suffix) and not re.search(r'[RLF]\d*$|^\d+[RLF]$', suffix):
@@ -72,11 +71,12 @@ class ImageManager:
 					}
 
 				# use just the suffix as the key and add image
-				key = suffix
+				key = f'{session_num}_{suffix}'
 				self.images_data[person_id]['images'][key] = {
 					'path': img_path,
 					'emotion': emotion,
 					'orientation': orientation,
+					'session_num': session_num,
 					'suffix': suffix
 				}
 
@@ -123,9 +123,16 @@ class ImageManager:
 		else:
 			return 'other'
 
-	def get_person_images(self, person_id: str) -> Dict:
-		"""Get all images for a specific person."""
-		return self.images_data.get(person_id, {'images': {}})['images']
+	def get_person_images(self, person_id: str, exclude_session2: bool = False):
+		"""Get all images for a specific person.
+		"""
+		images = self.images_data.get(person_id, {'images': {}})['images']
+
+		# filter out images with session_num == 2
+		if exclude_session2:
+			images = {k: v for k, v in images.items() if v.get('session_num') != 2}
+
+		return images
 
 	def get_persons_by_gender(self, gender: str) -> List[str]:
 		"""Get list of person IDs by gender."""

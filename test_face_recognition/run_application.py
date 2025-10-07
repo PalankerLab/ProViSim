@@ -430,7 +430,7 @@ class TrialGUI:
 def main():
 	try:
 		root = tk.Tk()
-		TrialGUI(root, debug=True, disable_processing=True)
+		TrialGUI(root, debug=False, disable_processing=False)
 		root.mainloop()
 	except Exception as e:
 		print(f"Error: {e}")

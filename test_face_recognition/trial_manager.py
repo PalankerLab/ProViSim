@@ -33,7 +33,7 @@ class TrialManager:
 		self.person_usage_counts_diff_gender = {pid: 0 for pid in self.persons}
 
 		# number of trials per scenario
-		self.num_trials_per_scenario = 26
+		self.num_trials_per_scenario = 25
 		self.current_trial = 0
 
 		# number of different scenarios
@@ -61,63 +61,10 @@ class TrialManager:
 
 		# shuffle the order
 		random.shuffle(trials)
-		random.shuffle(trials)
 
 		# duplicate for all phases
 		self.trial_sequence = trials * self.num_phases
 
-	# def generate_odd_person_out_trial(self) -> Dict:
-	# 	"""Scenario 1: Find the different person (3 same + 1 different)."""
-	# 	# get all people available in the dataset
-	# 	persons = self.image_manager.get_all_persons()
-	#
-	# 	# if there are less than 2 people, we cannot generate this scenario
-	# 	if len(persons) < 2:
-	# 		return None
-	#
-	# 	# select two different persons
-	# 	selected_persons = random.sample(persons, 2)
-	# 	same_person = selected_persons[0]
-	# 	diff_person = selected_persons[1]
-	#
-	# 	# get the images for the same person
-	# 	same_images = self.image_manager.get_person_images(same_person)
-	# 	if len(same_images) < 3:
-	# 		return None
-	#
-	# 	# get the images for the different person
-	# 	diff_images = self.image_manager.get_person_images(diff_person)
-	# 	if len(diff_images) < 1:
-	# 		return None
-	#
-	# 	# select three images from the same person and one from the different person
-	# 	same_selected = random.sample(list(same_images.keys()), 3)
-	# 	diff_selected = random.choice(list(diff_images.keys()))
-	#
-	# 	# create an image list with paths
-	# 	images = []
-	# 	for key in same_selected:
-	# 		images.append(same_images[key]['path'])
-	# 	images.append(diff_images[diff_selected]['path'])
-	#
-	# 	# randomize the positions in which the images are shown
-	# 	positions = list(range(4))
-	# 	random.shuffle(positions)
-	#
-	# 	# set the position of the correct answer
-	# 	correct_answer = positions.index(3)
-	#
-	# 	# reorder images according to shuffled positions
-	# 	reordered_images = [''] * 4
-	# 	for i, pos in enumerate(positions):
-	# 		reordered_images[i] = images[pos]
-	#
-	# 	return {
-	# 		'type': 'different_person',
-	# 		'images': reordered_images,
-	# 		'correct_answer': correct_answer,
-	# 		'question': 'Who person is the odd one out?'
-	# 	}
 	def generate_odd_person_out_trial(self):
 		"""Scenario 1: Find the different person (3 same + 1 different)."""
 		# if there are less than 2 people, we cannot generate this scenario
@@ -140,15 +87,15 @@ class TrialManager:
 		self.person_usage_counts_odd_one_out[diff_person] += 1
 
 		# get images
-		same_images = self.image_manager.get_person_images(same_person)
+		same_images = self.image_manager.get_person_images(same_person, exclude_session2=True)
 		if len(same_images) < 3:
 			return None
 
-		diff_images = self.image_manager.get_person_images(diff_person)
+		diff_images = self.image_manager.get_person_images(diff_person, exclude_session2=True)
 		if len(diff_images) < 1:
 			return None
 
-		# reseed before selecting images
+		# select images
 		same_selected = random.sample(list(same_images.keys()), 3)
 		diff_selected = random.choice(list(diff_images.keys()))
 
@@ -156,18 +103,12 @@ class TrialManager:
 		images = [same_images[key]['path'] for key in same_selected]
 		images.append(diff_images[diff_selected]['path'])
 
-		# reseed before shuffling positions
-		positions = list(range(4))
-		random.shuffle(positions)
-		random.shuffle(positions)
+		# choose a random correct answer position (0–3)
+		correct_answer = random.randint(0, 3)
 
-		# correct answer position (last image is the different person)
-		correct_answer = positions.index(3)
-
-		# reorder images according to shuffled positions
-		reordered_images = [''] * 4
-		for i, pos in enumerate(positions):
-			reordered_images[i] = images[pos]
+		# move the different person (last image) to that position
+		reordered_images = images[:]
+		reordered_images.insert(correct_answer, reordered_images.pop(3))
 
 		return {
 			'type': 'different_person',
@@ -176,53 +117,6 @@ class TrialManager:
 			'question': 'Which person is the odd one out?'
 		}
 
-	# def generate_different_gender_trial(self) -> Dict:
-	# 	"""Scenario 2: Find different gender (3 same gender + 1 different)."""
-	# 	male_persons = self.image_manager.get_persons_by_gender('M')
-	# 	female_persons = self.image_manager.get_persons_by_gender('F')
-	#
-	# 	if len(male_persons) < 3 or len(female_persons) < 1:
-	# 		return None
-	#
-	# 	# randomly choose which gender to use as majority
-	# 	if random.choice([True, False]):
-	# 		same_gender_persons = random.sample(male_persons, 3)
-	# 		diff_gender_person = random.choice(female_persons)
-	# 	else:
-	# 		same_gender_persons = random.sample(female_persons, 3)
-	# 		diff_gender_person = random.choice(male_persons)
-	#
-	# 	# get one image from each person
-	# 	images = []
-	# 	for person in same_gender_persons:
-	# 		person_images = self.image_manager.get_person_images(person)
-	# 		if person_images:
-	# 			img_key = random.choice(list(person_images.keys()))
-	# 			images.append(person_images[img_key]['path'])
-	#
-	# 	diff_images = self.image_manager.get_person_images(diff_gender_person)
-	# 	if diff_images:
-	# 		img_key = random.choice(list(diff_images.keys()))
-	# 		images.append(diff_images[img_key]['path'])
-	#
-	# 	if len(images) != 4:
-	# 		return None
-	#
-	# 	# randomize positions
-	# 	positions = list(range(4))
-	# 	random.shuffle(positions)
-	# 	correct_answer = positions.index(3)
-	#
-	# 	reordered_images = [''] * 4
-	# 	for i, pos in enumerate(positions):
-	# 		reordered_images[i] = images[pos]
-	#
-	# 	return {
-	# 		'type': 'gender',
-	# 		'images': reordered_images,
-	# 		'correct_answer': correct_answer,
-	# 		'question': 'Which person is a different gender?'
-	# 	}
 	def generate_different_gender_trial(self):
 		"""Scenario 2: Find different gender (3 same gender + 1 different)."""
 		# we need at least 3 persons of each gender for this scenario
@@ -261,12 +155,12 @@ class TrialManager:
 		# get one image from each person
 		images = []
 		for person in same_gender_persons:
-			person_images = self.image_manager.get_person_images(person)
+			person_images = self.image_manager.get_person_images(person, exclude_session2=True)
 			if person_images:
 				img_key = random.choice(list(person_images.keys()))
 				images.append(person_images[img_key]['path'])
 
-		diff_images = self.image_manager.get_person_images(diff_gender_person)
+		diff_images = self.image_manager.get_person_images(diff_gender_person, exclude_session2=True)
 		if diff_images:
 			img_key = random.choice(list(diff_images.keys()))
 			images.append(diff_images[img_key]['path'])
@@ -275,14 +169,9 @@ class TrialManager:
 			return None
 
 		# randomize positions
-		positions = list(range(4))
-		random.shuffle(positions)
-		random.shuffle(positions)
-		correct_answer = positions.index(3)
-
-		reordered_images = [''] * 4
-		for i, pos in enumerate(positions):
-			reordered_images[i] = images[pos]
+		correct_answer = random.randint(0, 3)
+		reordered_images = images[:]
+		reordered_images.insert(correct_answer, reordered_images.pop(3))
 
 		return {
 			'type': 'gender',
@@ -290,79 +179,6 @@ class TrialManager:
 			'correct_answer': correct_answer,
 			'question': 'Which person is a different gender?'
 		}
-
-	# def generate_emotion_trial(self):
-	# 	"""Scenario 3: Find specific emotion (4 emotions of same person)."""
-	# 	# Find a person with multiple emotions (only use images with pure letter suffixes)
-	# 	person_with_emotions = None
-	# 	for person in self.persons:
-	# 		person_images = self.image_manager.get_person_images(person)
-	# 		emotions = set()
-	# 		emotion_images = {}
-	#
-	# 		for key, img_data in person_images.items():
-	# 			# Only use images that have pure letter emotions (not R/L/F orientations)
-	# 			if re.match(r'^[A-Z]+$', img_data['suffix']) and not re.search(r'[RLF]', img_data['suffix']):
-	# 				emotion = img_data['emotion']
-	# 				emotions.add(emotion)
-	# 				if emotion not in emotion_images:
-	# 					emotion_images[emotion] = []
-	# 				emotion_images[emotion].append(img_data['path'])
-	#
-	# 		if len(emotions) >= 4:  # Need at least 4 different emotions
-	# 			person_with_emotions = person
-	# 			person_emotion_images = emotion_images
-	# 			break
-	#
-	# 	# If no person with multiple emotions is found, return None
-	# 	if not person_with_emotions:
-	# 		return None
-	#
-	# 	# select 4 different emotions
-	# 	available_emotions = list(person_emotion_images.keys())
-	# 	random.seed(self.random_seed)
-	# 	selected_emotions = random.sample(available_emotions, 4)
-	# 	images = []
-	#
-	# 	for emotion in selected_emotions:
-	# 		random.seed(self.random_seed)
-	# 		images.append(random.choice(person_emotion_images[emotion]))
-	#
-	# 	# draw a random emotion from the list of available emotions to ask about
-	# 	random.seed(self.random_seed)
-	# 	target_emotion = random.choice(selected_emotions)
-	# 	correct_answer = selected_emotions.index(target_emotion)
-	#
-	# 	# map emotion codes
-	# 	emotion_names = {
-	# 		'NE': 'neutral',
-	# 		'HA': 'happy',
-	# 		'SA': 'sad',
-	# 		'AN': 'angry',
-	# 		'FE': 'fearful',
-	# 		'DI': 'disgusted',
-	# 		'SU': 'surprised',
-	# 		'CO': 'confused'
-	# 	}
-	#
-	# 	target_emotion_name = emotion_names.get(target_emotion, target_emotion.lower())
-	#
-	# 	# Randomize positions
-	# 	positions = list(range(4))
-	# 	random.seed(self.random_seed)
-	# 	random.shuffle(positions)
-	# 	correct_answer = positions.index(correct_answer)
-	#
-	# 	reordered_images = [''] * 4
-	# 	for i, pos in enumerate(positions):
-	# 		reordered_images[i] = images[pos]
-	#
-	# 	return {
-	# 		'type': 'emotion',
-	# 		'images': reordered_images,
-	# 		'correct_answer': correct_answer,
-	# 		'question': f'Which face looks {target_emotion_name}?'
-	# 	}
 
 	def generate_emotion_trial(self):
 		"""Scenario 3: Find specific emotion (4 emotions of same person)."""
@@ -396,18 +212,22 @@ class TrialManager:
 		if not eligible_persons:
 			return None
 
-		# pick a person with multiple emotions
-		person_with_emotions = random.choice(eligible_persons)
-		person_emotion_images = person_emotion_data[person_with_emotions]
-
 		# select 4 different emotions prioritizing least-used ones
-		available_emotions = list(person_emotion_images.keys())
+		available_emotions = list({e for person in eligible_persons for e in person_emotion_data[person]})
 		available_emotions.sort(key=lambda e: self.emotion_usage_counts.get(e, 0))
 		selected_emotions = available_emotions[:4] if len(available_emotions) >= 4 else available_emotions
 
+		# select one image per emotion from any eligible person
 		images = []
 		for emotion in selected_emotions:
-			images.append(random.choice(person_emotion_images[emotion]))
+			candidate_imgs = []
+			for person in eligible_persons:
+				imgs = person_emotion_data[person].get(emotion, [])
+				candidate_imgs.extend(imgs)
+			if not candidate_imgs:
+				return None
+			chosen_img = random.choice(candidate_imgs)
+			images.append(chosen_img)
 			# increment emotion usage
 			self.emotion_usage_counts[emotion] += 1
 
@@ -426,12 +246,10 @@ class TrialManager:
 			'SU': 'surprised',
 			'CO': 'confused'
 		}
-
 		target_emotion_name = emotion_names.get(target_emotion, target_emotion.lower())
 
 		# randomize positions
 		positions = list(range(4))
-		random.shuffle(positions)
 		random.shuffle(positions)
 		correct_answer = positions.index(correct_answer)
 
