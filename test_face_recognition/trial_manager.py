@@ -71,16 +71,17 @@ class TrialManager:
 		if len(self.persons) < 2:
 			return None
 
+		# set deterministic random for consistent person selection between runs
+		rng = random.Random(self.random_seed)
+
 		# select two people with minimal usage to maximize spread
 		min_count = min(self.person_usage_counts_odd_one_out.values())
 		least_used = [pid for pid, count in self.person_usage_counts_odd_one_out.items() if count == min_count]
 
-		# fallback: pick randomly among all; reseed before selecting people
-		random.seed(self.random_seed)
 		if len(least_used) < 2:
-			same_person, diff_person = random.sample(self.persons, 2)
+			same_person, diff_person = rng.sample(self.persons, 2)
 		else:
-			same_person, diff_person = random.sample(least_used, 2)
+			same_person, diff_person = rng.sample(least_used, 2)
 
 		# increment people's usage counts
 		self.person_usage_counts_odd_one_out[same_person] += 1
@@ -95,7 +96,7 @@ class TrialManager:
 		if len(diff_images) < 1:
 			return None
 
-		# select images
+		# select images using global RNG (unbiased)
 		same_selected = random.sample(list(same_images.keys()), 3)
 		diff_selected = random.choice(list(diff_images.keys()))
 
@@ -103,16 +104,16 @@ class TrialManager:
 		images = [same_images[key]['path'] for key in same_selected]
 		images.append(diff_images[diff_selected]['path'])
 
-		# choose a random correct answer position (0–3)
-		correct_answer = random.randint(0, 3)
+		# shuffle images to randomize the position of the correct answer
+		images_combined = images[:]
+		random.shuffle(images_combined)
 
-		# move the different person (last image) to that position
-		reordered_images = images[:]
-		reordered_images.insert(correct_answer, reordered_images.pop(3))
+		# correct answer index
+		correct_answer = images_combined.index(images[-1])  # last image is the different person
 
 		return {
 			'type': 'different_person',
-			'images': reordered_images,
+			'images': images_combined,
 			'correct_answer': correct_answer,
 			'question': 'Which person is the odd one out?'
 		}
@@ -123,29 +124,34 @@ class TrialManager:
 		if len(self.male_persons) < 3 or len(self.female_persons) < 3:
 			return None
 
-		# reseed for deterministic choice of majority gender
-		random.seed(self.random_seed)
+		# use a separate RNG for deterministic person selection
+		rng = random.Random(self.random_seed)
 
-		# choose majority gender
-		if random.choice([True, False]):
+		# choose majority gender deterministically
+		if rng.choice([True, False]):
 			# male majority - pick three males with minimal usage
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
-			least_used_males = [pid for pid in self.male_persons if self.person_usage_counts_diff_gender[pid] == min_count]
-			same_gender_persons = random.sample(least_used_males, 3)
+			least_used_males = [pid for pid in self.male_persons if
+								self.person_usage_counts_diff_gender[pid] == min_count]
+			same_gender_persons = rng.sample(least_used_males, 3)
 
 			# pick one female with minimal usage
 			min_count_f = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
-			least_used_females = [pid for pid in self.female_persons if self.person_usage_counts_diff_gender[pid] == min_count_f]
-			diff_gender_person = random.choice(least_used_females)
+			least_used_females = [pid for pid in self.female_persons if
+								  self.person_usage_counts_diff_gender[pid] == min_count_f]
+			diff_gender_person = rng.choice(least_used_females)
 		else:
-			# female majority
+			# female majority - pick three females with minimal usage
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
-			least_used_females = [pid for pid in self.female_persons if self.person_usage_counts_diff_gender[pid] == min_count]
-			same_gender_persons = random.sample(least_used_females, 3)
+			least_used_females = [pid for pid in self.female_persons if
+								  self.person_usage_counts_diff_gender[pid] == min_count]
+			same_gender_persons = rng.sample(least_used_females, 3)
 
+			# pick one male with minimal usage
 			min_count_m = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
-			least_used_males = [pid for pid in self.male_persons if self.person_usage_counts_diff_gender[pid] == min_count_m]
-			diff_gender_person = random.choice(least_used_males)
+			least_used_males = [pid for pid in self.male_persons if
+								self.person_usage_counts_diff_gender[pid] == min_count_m]
+			diff_gender_person = rng.choice(least_used_males)
 
 		# increment usage counts
 		for pid in same_gender_persons:
@@ -168,20 +174,22 @@ class TrialManager:
 		if len(images) != 4:
 			return None
 
-		# randomize positions
-		correct_answer = random.randint(0, 3)
-		reordered_images = images[:]
-		reordered_images.insert(correct_answer, reordered_images.pop(3))
+		# shuffle images using global RNG (unbiased position)
+		images_combined = images[:]
+		random.shuffle(images_combined)
+
+		# correct answer index
+		correct_answer = images_combined.index(images[-1])  # diff_gender_person image is last in original list
 
 		return {
 			'type': 'gender',
-			'images': reordered_images,
+			'images': images_combined,
 			'correct_answer': correct_answer,
 			'question': 'Which person is a different gender?'
 		}
 
 	def generate_emotion_trial(self):
-		"""Scenario 3: Find specific emotion (4 emotions of same person)."""
+		"""Scenario 3: Find specific emotion (4 emotions of the same person)."""
 		# find all people with at least 4 distinct emotions
 		eligible_persons = []
 		person_emotion_data = {}
@@ -200,24 +208,29 @@ class TrialManager:
 						emotion_images[emotion] = []
 					emotion_images[emotion].append(img_data['path'])
 
-					# initialize emotion usage if not seen
 					if emotion not in self.emotion_usage_counts:
 						self.emotion_usage_counts[emotion] = 0
 
-			if len(emotions) >= 4:  # Need at least 4 different emotions
+			# need at least 4 different emotions
+			if len(emotions) >= 4:
 				eligible_persons.append(person)
 				person_emotion_data[person] = emotion_images
 
-		# if no suitable person is found, return None
 		if not eligible_persons:
 			return None
 
-		# select 4 different emotions prioritizing least-used ones
+		# deterministic random for consistent emotion selection between runs
+		rng = random.Random(self.random_seed)
+
+		# select 4 least-used emotions deterministically
 		available_emotions = list({e for person in eligible_persons for e in person_emotion_data[person]})
 		available_emotions.sort(key=lambda e: self.emotion_usage_counts.get(e, 0))
-		selected_emotions = available_emotions[:4] if len(available_emotions) >= 4 else available_emotions
+		if len(available_emotions) > 4:
+			selected_emotions = rng.sample(available_emotions, 4)
+		else:
+			selected_emotions = available_emotions
 
-		# select one image per emotion from any eligible person
+		# select one image per emotion using global RNG (unbiased)
 		images = []
 		for emotion in selected_emotions:
 			candidate_imgs = []
@@ -228,10 +241,9 @@ class TrialManager:
 				return None
 			chosen_img = random.choice(candidate_imgs)
 			images.append(chosen_img)
-			# increment emotion usage
 			self.emotion_usage_counts[emotion] += 1
 
-		# draw a random emotion from the selected set as the target
+		# select target emotion
 		target_emotion = random.choice(selected_emotions)
 		correct_answer = selected_emotions.index(target_emotion)
 
@@ -248,9 +260,10 @@ class TrialManager:
 		}
 		target_emotion_name = emotion_names.get(target_emotion, target_emotion.lower())
 
-		# randomize positions
+		# shuffle images positions
 		positions = list(range(4))
 		random.shuffle(positions)
+
 		correct_answer = positions.index(correct_answer)
 
 		reordered_images = [''] * 4
@@ -266,25 +279,31 @@ class TrialManager:
 
 	def get_next_trial(self) -> Optional[Dict]:
 		"""Get the next trial configuration."""
+		# check if we've reached the end of the trial sequence
 		if self.current_trial >= len(self.trial_sequence):
 			return None
 
+		# get the scenario number for the current trial
 		scenario_num = self.trial_sequence[self.current_trial]
 
-		# generate the next trial based on the scenario
+		# get the trial configuration for the current scenario
+		trial_config = None
 		if scenario_num == 0:
-			trial_config = self.generate_odd_person_out_trial()
+			while trial_config is None:
+				trial_config = self.generate_odd_person_out_trial()
 		elif scenario_num == 1:
-			trial_config = self.generate_different_gender_trial()
+			while trial_config is None:
+				trial_config = self.generate_different_gender_trial()
 		elif scenario_num == 2:
-			trial_config = self.generate_emotion_trial()
+			while trial_config is None:
+				trial_config = self.generate_emotion_trial()
 		else:
 			return None
 
-		if trial_config:
-			trial_config['scenario'] = scenario_num
-			trial_config['trial_number'] = self.current_trial + 1
-			trial_config['phase'] = self.current_phase
+		# add metadata
+		trial_config['scenario'] = scenario_num
+		trial_config['trial_number'] = self.current_trial + 1
+		trial_config['phase'] = self.current_phase
 
 		return trial_config
 

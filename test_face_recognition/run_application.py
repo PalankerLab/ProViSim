@@ -413,7 +413,7 @@ class TrialGUI:
 
 	def save_results(self):
 		# define filename based on subject ID and current time to store the results
-		filename = os.path.join(os.getcwd(), f"results_{self.subject_id}_{time.strftime('%Y%m%d_%H%M%S')}.xlsx")
+		filename = os.path.join(os.getcwd(), 'results', f"results_{self.subject_id}_{time.strftime('%Y%m%d_%H%M%S')}.xlsx")
 
 		# save the results to Excel
 		self.trial_manager.save_results_to_excel(filename)
