@@ -25,17 +25,17 @@ from utils import validate_gray_img
 class VisionSimulator:
 	"""Main class for peripheral vision simulation with a central scotoma."""
 
-	def __init__(self, input_image, output_image, viewing_distance_cm: float = 60.0,
+	def __init__(self, input_image, viewing_distance_cm: float = 60.0,
 				 image_width_cm: float = 14.0, image_height_cm: float = 20.0,
 				 sigma_center: float = 0.5, eccentricity_k: float = 0.8,
 				 scotoma_radius_deg: float = 12.0, implant_radius_deg: float = 8.0,
 				 scotoma_fill_color: Tuple[int, int, int] = (0, 0, 0), cutoff_freq: int = 10,
 			     tukey_alpha: float = 0.3, tukey_radius_expansion_factor: float = 0.3,
-				 gamma: float = 3.5, zoom_factor: float = 2.0, apply_contrast_reduction: bool = True):
+				 gamma: float = 3.5, zoom_factor: float = 2.0, apply_contrast_reduction: bool = True, gain: float =
+				 30.0, x_shift: float = 0.2, output_image = None):
 
 		# save input parameters
 		self.input_image = input_image
-		self.output_image = output_image
 		self.viewing_distance_cm = viewing_distance_cm
 		self.image_width_cm = image_width_cm
 		self.image_height_cm = image_height_cm
@@ -50,10 +50,21 @@ class VisionSimulator:
 		self.gamma = gamma
 		self.zoom_factor = zoom_factor
 		self.apply_contrast_reduction = apply_contrast_reduction
+		self.gain = gain
+		self.x_shift = x_shift
 
 		# preload OCR text recognition model
 		model_path = os.path.join(os.path.dirname(__file__), 'text_recognition_models')
 		self.reader = easyocr.Reader(['en'], model_storage_directory=model_path, download_enabled=False)
+
+		# check if input image exists
+		if not os.path.exists(self.input_image):
+			print(f"Error: Input image '{self.input_image}' not found")
+			return
+
+		# define output folder
+		self.output_image = output_image if output_image else os.path.join(os.path.dirname(__file__), 'output_' +
+																		   os.path.basename(self.input_image))
 
 	def degrees_to_pixels(self, image_array: np.ndarray, degrees: float) -> float:
 		"""
@@ -199,7 +210,8 @@ class VisionSimulator:
 		distances = np.sqrt((x_coords - center_x) ** 2 + (y_coords - center_y) ** 2)
 
 		# create a soft mask: 1 = full scotoma, 0 = no scotoma, linear fade in edge
-		scotoma_mask = np.clip((scotoma_radius_px + edge_width_px - distances) / edge_width_px, 0, 1)
+		# scotoma_mask = np.clip((scotoma_radius_px + edge_width_px - distances) / edge_width_px, 0, 1)
+		scotoma_mask = np.clip((scotoma_radius_px - distances) / edge_width_px,0, 1)
 
 		# apply scotoma with a soft edge
 		result = image.copy().astype(np.float32)
@@ -459,7 +471,7 @@ class VisionSimulator:
 
 		# create a scotoma at the center of the visual field (AMD vision)
 		print("Creating central scotoma...")
-		scotoma_image, scotoma_mask = self.create_scotoma(blurred_image)
+		scotoma_image, scotoma_mask = self.create_scotoma(blurred_image, edge_width_deg=1)
 
 		# show image with scotoma
 		Image.fromarray(scotoma_image).show()
@@ -487,7 +499,7 @@ class VisionSimulator:
 		print("Processing central field image with ProViSim...")
 
 		# convert to grayscale
-		gray_img = rgb_to_gray(image_path=None, img=enhanced_image)
+		gray_img = rgb_to_gray(enhanced_image)
 
 		# show the grayscale image
 		Image.fromarray(gray_img * 255).show()
@@ -502,9 +514,17 @@ class VisionSimulator:
 		# reduce the contrast of the filtered image using a gamma or sigmoid function
 		transformed_float_img = spatially_filtered_img.copy()
 		if self.apply_contrast_reduction:
+
+			# validate the filtered image is in [0, 1]
 			validate_gray_img(spatially_filtered_img)
-			transformed_float_img = gamma_transform(spatially_filtered_img, self.gamma)
-			# transformed_float_img = sigmoid_transform(spatially_filtered_img, gain=20, x_shift=0.2)
+
+			# apply gamma or sigmoid transformation
+			if self.gamma is not None:
+				print(f"Applying gamma transformation with gamma={self.gamma}...")
+				transformed_float_img = gamma_transform(spatially_filtered_img, self.gamma)
+			else:
+				print(f"Applying sigmoid transformation with gain={self.gamma}...")
+				transformed_float_img = sigmoid_transform(spatially_filtered_img, gain=self.gain, x_shift=self.x_shift)
 
 			# show the final transformed image
 			Image.fromarray(transformed_float_img * 255).show(title="Transformed Image")
@@ -521,56 +541,30 @@ class VisionSimulator:
 
 def main():
 
-	# define run parameters
-	params = {
-		'input_image': 'sample_input_images/4.jpeg',
-		'distance_cm': 46,
-		'image_width_cm': 20,
-		'image_height_cm': 15,
-		'sigma_center': 1.0,
-		'eccentricity_k': 1.2,
-		'scotoma_radius': 6.0,
-		'implant_radius': 4.0,
-		'cutoff_freq': 10, # 10 for 100um pixels; 50 for 20um pixels
-		'tukey_alpha': 0.3,
-		'tukey_radius_expansion_factor': 0.3,
-		'apply_contrast_reduction': False,
-		'gamma': 3.5,
-		'zoom_factor': 3.2,
-	}
-
-	# define output image filename
-	params['output_image'] = os.path.join(os.path.dirname(__file__), 'output_' + os.path.basename(params['input_image']))
-
-	# validate input file
-	if not os.path.exists(params['input_image']):
-		print(f"Error: Input image '{params['input_image']}' not found")
-		return
-
 	# create a simulator with the given parameters
 	simulator = VisionSimulator(
-		input_image=params['input_image'],
-		output_image=params['output_image'],
-		viewing_distance_cm=params['distance_cm'],
-		image_width_cm=params['image_width_cm'],
-		image_height_cm=params['image_height_cm'],
-		sigma_center=params['sigma_center'],
-		eccentricity_k=params['eccentricity_k'],
-		scotoma_radius_deg=params['scotoma_radius'],
-		implant_radius_deg=params['implant_radius'],
-		cutoff_freq=params['cutoff_freq'],
-		tukey_alpha=params['tukey_alpha'],
-		tukey_radius_expansion_factor=params['tukey_radius_expansion_factor'],
-		gamma=params['gamma'],
-		zoom_factor=params['zoom_factor'],
-		apply_contrast_reduction=params['apply_contrast_reduction']
-
+		input_image='/Users/annakochnev/Desktop/input_image_8.jpg',
+		viewing_distance_cm=35,
+		image_width_cm=22,
+		image_height_cm=29,
+		sigma_center=1.0,
+		eccentricity_k=1.3,
+		scotoma_radius_deg=7.5,
+		implant_radius_deg=5,
+		cutoff_freq=15,
+		tukey_alpha=0.3,
+		tukey_radius_expansion_factor=0.3,
+		gamma=None,
+		zoom_factor=2.5,
+		apply_contrast_reduction=True,
+		gain=30,
+		x_shift=0.2,
 	)
 
 	try:
 		# load the given input image
-		print(f"Loading image: {params['input_image']}")
-		image = Image.open(params['input_image'])
+		print(f"Loading image: {simulator.input_image}")
+		image = Image.open(simulator.input_image)
 
 		# convert image to ndarray for processing
 		image = np.array(image)
@@ -583,8 +577,8 @@ def main():
 
 		# save the result
 		output_img = Image.fromarray(result_image.astype(np.uint8))
-		output_img.save(params['output_image'])
-		print(f"Vision simulation completed! Output saved as: {params['output_image']}")
+		output_img.save(simulator.output_image)
+		print(f"Vision simulation completed! Output saved as: {simulator.output_image}")
 
 	except Exception as e:
 		print(f"Error processing image: {e}")

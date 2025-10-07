@@ -6,3 +6,4 @@
 __pycache__/
 
 *.task
+/test_face_recognition/images
