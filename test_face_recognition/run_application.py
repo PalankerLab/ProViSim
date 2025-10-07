@@ -198,14 +198,76 @@ class TrialGUI:
 		cutoff_frequency, gain, shift = 10, 30, 0.2
 
 		try:
-			# iterate over the images, and prepare them for display
+			# iterate over the images and prepare them for display
 			for i, path in enumerate(self.current_trial_config["images"]):
 				img = Image.open(path).convert("RGB")
 				img_array = np.array(img)
 
+				# get original dimensions
+				orig_h, orig_w = img_array.shape[:2]
+
+				# automatically zoom in on non-white regions (head area)
+				try:
+					# convert to grayscale and find mask of non-white pixels
+					gray = np.mean(img_array, axis=2)
+					mask = gray < 240
+
+					if np.any(mask):
+						ys, xs = np.where(mask)
+						ymin, ymax = ys.min(), ys.max()
+						xmin, xmax = xs.min(), xs.max()
+
+						# expand box slightly (5%) for natural framing
+						h, w = img_array.shape[:2]
+						x_pad = int(0.05 * (xmax - xmin))
+						y_pad = int(0.05 * (ymax - ymin))
+						xmin = max(xmin - x_pad, 0)
+						xmax = min(xmax + x_pad, w)
+						ymin = max(ymin - y_pad, 0)
+						ymax = min(ymax + y_pad, h)
+
+						# crop to bounding box
+						cropped = img_array[ymin:ymax, xmin:xmax]
+
+						# resize back to fit within the same aspect ratio
+						crop_h, crop_w = cropped.shape[:2]
+						target_ratio = orig_w / orig_h
+						crop_ratio = crop_w / crop_h
+
+						if abs(crop_ratio - target_ratio) > 0.01:
+							# pad with white to maintain proportions
+							if crop_ratio > target_ratio:
+								# too wide - pad vertically
+								new_h = int(crop_w / target_ratio)
+								pad_top = (new_h - crop_h) // 2
+								pad_bottom = new_h - crop_h - pad_top
+								cropped = np.pad(
+									cropped,
+									((pad_top, pad_bottom), (0, 0), (0, 0)),
+									mode="constant",
+									constant_values=255,
+								)
+							else:
+								# too high - pad horizontally
+								new_w = int(crop_h * target_ratio)
+								pad_left = (new_w - crop_w) // 2
+								pad_right = new_w - crop_w - pad_left
+								cropped = np.pad(
+									cropped,
+									((0, 0), (pad_left, pad_right), (0, 0)),
+									mode="constant",
+									constant_values=255,
+								)
+
+						# resize back to original image dimensions
+						img_array = np.array(Image.fromarray(cropped).resize((orig_w, orig_h)))
+
+				except Exception as e:
+					print(f"(Zoom skipped: {e})")
+
 				# if processing is disabled for debug, skip it
 				if self.disable_processing:
-					processed = img_array
+					processed = img_array / 255
 
 				else:
 					# process image using enhancements

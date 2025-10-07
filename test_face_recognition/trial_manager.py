@@ -61,6 +61,7 @@ class TrialManager:
 
 		# shuffle the order
 		random.shuffle(trials)
+		random.shuffle(trials)
 
 		# duplicate for all phases
 		self.trial_sequence = trials * self.num_phases
@@ -148,17 +149,16 @@ class TrialManager:
 			return None
 
 		# reseed before selecting images
-		random.seed(self.random_seed)
 		same_selected = random.sample(list(same_images.keys()), 3)
 		diff_selected = random.choice(list(diff_images.keys()))
 
-		# create image list
+		# create an image list
 		images = [same_images[key]['path'] for key in same_selected]
 		images.append(diff_images[diff_selected]['path'])
 
 		# reseed before shuffling positions
-		random.seed(self.random_seed)
 		positions = list(range(4))
+		random.shuffle(positions)
 		random.shuffle(positions)
 
 		# correct answer position (last image is the different person)
@@ -237,24 +237,20 @@ class TrialManager:
 			# male majority - pick three males with minimal usage
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
 			least_used_males = [pid for pid in self.male_persons if self.person_usage_counts_diff_gender[pid] == min_count]
-			random.seed(self.random_seed)
 			same_gender_persons = random.sample(least_used_males, 3)
 
 			# pick one female with minimal usage
 			min_count_f = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
 			least_used_females = [pid for pid in self.female_persons if self.person_usage_counts_diff_gender[pid] == min_count_f]
-			random.seed(self.random_seed)
 			diff_gender_person = random.choice(least_used_females)
 		else:
 			# female majority
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
 			least_used_females = [pid for pid in self.female_persons if self.person_usage_counts_diff_gender[pid] == min_count]
-			random.seed(self.random_seed)
 			same_gender_persons = random.sample(least_used_females, 3)
 
 			min_count_m = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
 			least_used_males = [pid for pid in self.male_persons if self.person_usage_counts_diff_gender[pid] == min_count_m]
-			random.seed(self.random_seed)
 			diff_gender_person = random.choice(least_used_males)
 
 		# increment usage counts
@@ -267,13 +263,11 @@ class TrialManager:
 		for person in same_gender_persons:
 			person_images = self.image_manager.get_person_images(person)
 			if person_images:
-				random.seed(self.random_seed)
 				img_key = random.choice(list(person_images.keys()))
 				images.append(person_images[img_key]['path'])
 
 		diff_images = self.image_manager.get_person_images(diff_gender_person)
 		if diff_images:
-			random.seed(self.random_seed)
 			img_key = random.choice(list(diff_images.keys()))
 			images.append(diff_images[img_key]['path'])
 
@@ -282,7 +276,7 @@ class TrialManager:
 
 		# randomize positions
 		positions = list(range(4))
-		random.seed(self.random_seed)
+		random.shuffle(positions)
 		random.shuffle(positions)
 		correct_answer = positions.index(3)
 
@@ -403,25 +397,21 @@ class TrialManager:
 			return None
 
 		# pick a person with multiple emotions
-		random.seed(self.random_seed)
 		person_with_emotions = random.choice(eligible_persons)
 		person_emotion_images = person_emotion_data[person_with_emotions]
 
 		# select 4 different emotions prioritizing least-used ones
 		available_emotions = list(person_emotion_images.keys())
-		random.seed(self.random_seed)
 		available_emotions.sort(key=lambda e: self.emotion_usage_counts.get(e, 0))
 		selected_emotions = available_emotions[:4] if len(available_emotions) >= 4 else available_emotions
 
 		images = []
 		for emotion in selected_emotions:
-			random.seed(self.random_seed)
 			images.append(random.choice(person_emotion_images[emotion]))
 			# increment emotion usage
 			self.emotion_usage_counts[emotion] += 1
 
 		# draw a random emotion from the selected set as the target
-		random.seed(self.random_seed)
 		target_emotion = random.choice(selected_emotions)
 		correct_answer = selected_emotions.index(target_emotion)
 
@@ -439,9 +429,9 @@ class TrialManager:
 
 		target_emotion_name = emotion_names.get(target_emotion, target_emotion.lower())
 
-		# R=randomize positions
+		# randomize positions
 		positions = list(range(4))
-		random.seed(self.random_seed)
+		random.shuffle(positions)
 		random.shuffle(positions)
 		correct_answer = positions.index(correct_answer)
 
