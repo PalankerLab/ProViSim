@@ -137,24 +137,29 @@ def get_center_iris(iris_frozen_set, idx_to_coordinates):
 	return center_of_iris.astype(np.uint8)
 
 
-def compute_line_thickness(img, cycles_per_img=10, ratio=1.5):
+def compute_line_thickness(img, cycles_per_img=10, ratio=1):
 	"""
 	Computes the line thickness to draw the facial features.
 
 	Parameters:
-	img (np.ndarray): The image of the face to compute the line thickness for.
-	cycles_per_img (int): Number of cycles that can be represented by the implant.
-	ratio (float): Scaling factor applied to the calculated minimum line thickness.
+		img (np.ndarray): The image of the face to compute the line thickness for.
+		cycles_per_img (int): Number of cycles that can be represented by the implant.
+		ratio (float): Scaling factor applied to the calculated minimum line thickness.
 
 	Returns:
-		int: The calculated line thickness, adjusted by the specified ratio
+		int: The calculated line thickness, adjusted by the specified ratio.
 	"""
-	# The lines are drawn with thickness of 2 * line_thickness.
-	# minimum_line_thickness is thus half of a single pixel width on the implant.
-	# minimum_line_thickness = img.shape[0] // (cycles_per_img * 2) // 2
-	# line_thickness = round(minimum_line_thickness * ratio)
-	line_thickness = round(img.shape[0]  / (2 * cycles_per_img) // 2)
-	return line_thickness
+	# how many image pixels compose each implant pixel
+	image_pixels_per_implant_pixel = img.shape[0] / (2 * cycles_per_img)
+
+	# set minimum the line thickness as 0.8 implant pixels
+	minimum_line_thickness = 0.8 * image_pixels_per_implant_pixel
+
+	# apply ratio and round to integer
+	line_thickness = round(minimum_line_thickness * ratio)
+
+	# ensure at least 1 pixel thickness
+	return max(line_thickness, 1)
 
 
 def create_lip_mask(face_image, lip_indices):

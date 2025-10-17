@@ -1,11 +1,11 @@
-import glob
 import os
 import re
-from typing import Dict, List
+import glob
+from typing import List
 
 
 class ImageManager:
-	"""Manages loading and organizing face images for the trial."""
+	"""Manages the loading and organizing of face images for the trial."""
 
 	def __init__(self):
 		# use the built-in images folder from the project directory
@@ -24,7 +24,7 @@ class ImageManager:
 		# get a list of all .jpg files in the images folder
 		image_files = glob.glob(os.path.join(self.images_folder, "*.jpg"))
 
-		#check if any images were found
+		# check if any images were found
 		if not image_files:
 			raise FileNotFoundError(f"No .jpg images found in: {self.images_folder}")
 
@@ -82,7 +82,7 @@ class ImageManager:
 
 	@staticmethod
 	def _parse_orientation(orientation_str: str) -> str:
-		"""Extract orientation information from orientation string."""
+		"""Extract orientation information from the orientation string."""
 		# look for orientation patterns like 00F, 30L, 60R, 90L, etc.
 		if orientation_str == '00F' or 'F' in orientation_str:
 			return 'front'
@@ -124,24 +124,23 @@ class ImageManager:
 			return 'other'
 
 	def get_person_images(self, person_id: str, exclude_session2: bool = False):
-		"""Get all images for a specific person.
-		"""
+		# get all the images of the required person
 		images = self.images_data.get(person_id, {'images': {}})['images']
 
-		# filter out images with session_num == 2
+		# filter out images with session_num == 2, if requested
 		if exclude_session2:
 			images = {k: v for k, v in images.items() if v.get('session_num') != 2}
 
 		return images
 
 	def get_persons_by_gender(self, gender: str) -> List[str]:
-		"""Get list of person IDs by gender."""
+		# get a list of person IDs by the requested gender
 		return [pid for pid, data in self.images_data.items() if data['gender'] == gender]
 
 	def get_all_persons(self) -> List[str]:
-		"""Get list of all person IDs."""
+		# get a list of all person IDs
 		return list(self.images_data.keys())
 
 	def get_person_gender(self, person_id: str) -> str:
-		"""Get gender of a specific person."""
+		# get the gender of the requested person
 		return self.images_data.get(person_id, {}).get('gender', 'Unknown')

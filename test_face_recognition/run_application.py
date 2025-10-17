@@ -150,13 +150,13 @@ class TrialGUI:
 			self.root.bind(key, self.on_key_press)
 
 	def start_trial(self):
-		# validate the subject ID
+		# validate the participant's ID
 		subject = self.subject_entry.get().strip()
 		if not subject:
 			messagebox.showerror("Error", "Please enter a Subject ID")
 			return
 
-		# store subject ID
+		# store the ID
 		self.subject_id = subject
 
 		# initialize managers
@@ -189,7 +189,7 @@ class TrialGUI:
 		# start timer
 		self.trial_start_time = time.time()
 
-		# timeout trial after 15 seconds
+		# timeout trial after 20 seconds
 		self.timeout_id = self.root.after(20000, self.timeout_trial)
 
 	def load_images(self):
@@ -405,7 +405,7 @@ class TrialGUI:
 			bg="white",
 		).grid(row=0, column=0, sticky="nsew")
 
-		# force the UI to update so the message is visible
+		# force the GUI to update so the "thank you" message is visible
 		self.root.update_idletasks()
 
 		# save the results slightly later to avoid blocking UI immediately
@@ -417,9 +417,6 @@ class TrialGUI:
 
 		# save the results to Excel
 		self.trial_manager.save_results_to_excel(filename)
-
-		# close the GUI
-		self.root.destroy()
 
 	def clear_root(self):
 		# destroy all widgets in the root

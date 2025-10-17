@@ -1,14 +1,15 @@
-import random
+# standard imports
 import re
+import random
+import pandas as pd
 from typing import Dict, Optional
 
-import pandas as pd
-
+# project imports
 from test_face_recognition.image_manager import ImageManager
 
 
 class TrialManager:
-	"""Manages the clinical trial scenarios and data collection."""
+	"""Manages the trial scenarios and data collection."""
 
 	def __init__(self, image_manager: ImageManager):
 		# initialize variables
@@ -43,13 +44,16 @@ class TrialManager:
 
 		# number of phases (without and with landmarks)
 		self.num_phases = 2
+		self.trials_per_phase = self.num_trials_per_scenario * self.num_scenarios
 		self.current_phase = 1
+
+		# emotions to test
+		self.emotions = ['NE', 'HA', 'SA', 'AN', 'FE', 'DI', 'SU', 'CO']
 
 		# setup trial order
 		self.setup_trials()
 
 	def setup_trials(self):
-		"""Setup randomized trial order with fixed seed for consistency."""
 		# fixed seed for consistency across subjects
 		random.seed(self.random_seed)
 
@@ -66,37 +70,41 @@ class TrialManager:
 		self.trial_sequence = trials * self.num_phases
 
 	def generate_odd_person_out_trial(self):
-		"""Scenario 1: Find the different person (3 same + 1 different)."""
+		"""Identify the different person (3 same + 1 different)"""
 		# if there are less than 2 people, we cannot generate this scenario
 		if len(self.persons) < 2:
 			return None
-
-		# set deterministic random for consistent person selection between runs
-		rng = random.Random(self.random_seed)
 
 		# select two people with minimal usage to maximize spread
 		min_count = min(self.person_usage_counts_odd_one_out.values())
 		least_used = [pid for pid, count in self.person_usage_counts_odd_one_out.items() if count == min_count]
 
+		# set deterministic random for consistent person selection between runs
+		rng = random.Random(self.random_seed)
+
+		# if we got less then two people with minimal usage, we need to pick two from the full pool
 		if len(least_used) < 2:
 			same_person, diff_person = rng.sample(self.persons, 2)
+
+		# otherwise, pick two from the least used people
 		else:
 			same_person, diff_person = rng.sample(least_used, 2)
 
-		# increment people's usage counts
+		# increment people's usage counts for the chosen people
 		self.person_usage_counts_odd_one_out[same_person] += 1
 		self.person_usage_counts_odd_one_out[diff_person] += 1
 
-		# get images
+		# get all the images of the same person
 		same_images = self.image_manager.get_person_images(same_person, exclude_session2=True)
 		if len(same_images) < 3:
 			return None
 
+		# get all the images of the different person
 		diff_images = self.image_manager.get_person_images(diff_person, exclude_session2=True)
 		if len(diff_images) < 1:
 			return None
 
-		# select images using global RNG (unbiased)
+		# select 3 images for the same and one image for the different using global random
 		same_selected = random.sample(list(same_images.keys()), 3)
 		diff_selected = random.choice(list(diff_images.keys()))
 
@@ -108,8 +116,8 @@ class TrialManager:
 		images_combined = images[:]
 		random.shuffle(images_combined)
 
-		# correct answer index
-		correct_answer = images_combined.index(images[-1])  # last image is the different person
+		# get the index of the correct answer
+		correct_answer = images_combined.index(images[-1])
 
 		return {
 			'type': 'different_person',
@@ -119,17 +127,16 @@ class TrialManager:
 		}
 
 	def generate_different_gender_trial(self):
-		"""Scenario 2: Find different gender (3 same gender + 1 different)."""
-		# we need at least 3 persons of each gender for this scenario
+		"""Identify the different gender (3 same gender + 1 different)."""
+		# we need at least 3 people of each gender for this scenario
 		if len(self.male_persons) < 3 or len(self.female_persons) < 3:
 			return None
 
-		# use a separate RNG for deterministic person selection
+		# choose majority gender deterministically across runs
 		rng = random.Random(self.random_seed)
-
-		# choose majority gender deterministically
 		if rng.choice([True, False]):
-			# male majority - pick three males with minimal usage
+
+			# pick three males with minimal usage
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
 			least_used_males = [pid for pid in self.male_persons if
 								self.person_usage_counts_diff_gender[pid] == min_count]
@@ -140,7 +147,9 @@ class TrialManager:
 			least_used_females = [pid for pid in self.female_persons if
 								  self.person_usage_counts_diff_gender[pid] == min_count_f]
 			diff_gender_person = rng.choice(least_used_females)
+
 		else:
+
 			# female majority - pick three females with minimal usage
 			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
 			least_used_females = [pid for pid in self.female_persons if
@@ -171,15 +180,16 @@ class TrialManager:
 			img_key = random.choice(list(diff_images.keys()))
 			images.append(diff_images[img_key]['path'])
 
+		# ensure we end up with 4 images in the list
 		if len(images) != 4:
 			return None
 
-		# shuffle images using global RNG (unbiased position)
+		# shuffle images using local seed (position needs to be shuffled differently each time)
 		images_combined = images[:]
 		random.shuffle(images_combined)
 
-		# correct answer index
-		correct_answer = images_combined.index(images[-1])  # diff_gender_person image is last in original list
+		# get the index of the correct answer
+		correct_answer = images_combined.index(images[-1])
 
 		return {
 			'type': 'gender',
@@ -189,11 +199,12 @@ class TrialManager:
 		}
 
 	def generate_emotion_trial(self):
-		"""Scenario 3: Find specific emotion (4 emotions of the same person)."""
-		# find all people with at least 4 distinct emotions
+		"""Identify a specific emotion."""
+		# initialize data structures
 		eligible_persons = []
 		person_emotion_data = {}
 
+		# iterate the people and find all people with at least 4 distinct emotions
 		for person in self.persons:
 			person_images = self.image_manager.get_person_images(person)
 			emotions = set()
@@ -216,10 +227,11 @@ class TrialManager:
 				eligible_persons.append(person)
 				person_emotion_data[person] = emotion_images
 
+		# if there are no eligible persons, we cannot generate this scenario
 		if not eligible_persons:
 			return None
 
-		# deterministic random for consistent emotion selection between runs
+		# use deterministic global seed for consistent emotion selection between runs
 		rng = random.Random(self.random_seed)
 
 		# select 4 least-used emotions deterministically
@@ -230,7 +242,7 @@ class TrialManager:
 		else:
 			selected_emotions = available_emotions
 
-		# select one image per emotion using global RNG (unbiased)
+		# select one image per emotion using local seed (image needs to be shuffled differently each time)
 		images = []
 		for emotion in selected_emotions:
 			candidate_imgs = []
@@ -264,6 +276,7 @@ class TrialManager:
 		positions = list(range(4))
 		random.shuffle(positions)
 
+		# get the index of the correct answer
 		correct_answer = positions.index(correct_answer)
 
 		reordered_images = [''] * 4
@@ -309,7 +322,7 @@ class TrialManager:
 
 	def record_answer(self, trial_config: Dict, selected_answer: int, response_time: float,
 					 correct: bool, timeout: bool = False):
-		"""Record the subject's answer."""
+		"""Record the participant's answer."""
 		phase_key = f'phase{self.current_phase}'
 		scenario_key = self.scenario_names[trial_config["scenario"]]
 
@@ -337,7 +350,7 @@ class TrialManager:
 			# advance to phase 2
 			self.current_phase = 2
 
-			# reset counters
+			# reset counters for the second phase
 			self.person_usage_counts_odd_one_out = {pid: 0 for pid in self.persons}
 			self.person_usage_counts_diff_gender = {pid: 0 for pid in self.persons}
 			self.emotion_usage_counts = {}
@@ -347,7 +360,7 @@ class TrialManager:
 		return self.current_trial >= len(self.trial_sequence)
 
 	def get_results_summary(self) -> Dict:
-		"""Get summary of results."""
+		"""Get a summary of the results."""
 		summary = {}
 
 		for phase in ['phase1', 'phase2']:
@@ -374,7 +387,7 @@ class TrialManager:
 		return summary
 
 	def save_results_to_excel(self, filename: str):
-		"""Save detailed results to Excel file."""
+		"""Save detailed results to an Excel file."""
 		with pd.ExcelWriter(filename) as writer:
 			# create a detailed results sheet
 			all_results = []
