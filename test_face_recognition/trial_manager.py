@@ -1,317 +1,348 @@
 # standard imports
-import re
 import random
+from enum import Enum
 import pandas as pd
+from collections import Counter
 from typing import Dict, Optional
 
 # project imports
 from test_face_recognition.image_manager import ImageManager
+
+# define constants
+class Scenario(Enum):
+	ODD_PERSON_OUT = 0
+	DIFFERENT_GENDER = 1
+	EMOTION = 2
+
+# helper function to cycle through positions
+def _balanced_cycle(num=4):
+	i = random.randrange(num)
+	while True:
+		yield i
+		i = (i + 1) % num
 
 
 class TrialManager:
 	"""Manages the trial scenarios and data collection."""
 
 	def __init__(self, image_manager: ImageManager):
+		# initialize output
+		self.trial_screens = []
+		self.emotion_tuples = []
+		self.odd_person_out_people = []
+		self.diff_gender_people = []
+
 		# initialize variables
 		self.results = {
 			'phase1': {'odd_person_out': [], 'diff_gender': [], 'emotion': []},
 			'phase2': {'odd_person_out': [], 'diff_gender': [], 'emotion': []}
 		}
-		self.trial_sequence = []
+
+		# create a global random seed for consistency across subjects
 		self.random_seed = 713
+		self.global_random = random.Random(self.random_seed)
 
 		# save image manager
 		self.image_manager = image_manager
 
 		# get all persons and initialize usage counts
-		self.persons = self.image_manager.get_all_persons()
-		self.person_usage_counts_odd_one_out = {pid: 0 for pid in self.persons}
-		self.emotion_usage_counts = {}
+		self.people = self.image_manager.get_all_persons()
 
 		# get all persons by gender and initialize usage counts
 		self.male_persons = self.image_manager.get_persons_by_gender('M')
 		self.female_persons = self.image_manager.get_persons_by_gender('F')
-		self.person_usage_counts_diff_gender = {pid: 0 for pid in self.persons}
+
+		# ensure there are at least 10 people and 3 people of each gender
+		if len(self.male_persons) < 3 or len(self.female_persons) < 3:
+			raise Exception('Not enough people in the dataset to run this experiment.')
+
+		# get people with emotions and initialize usage counts
+		self.people_with_emotions = self.image_manager.get_people_with_emotions()
 
 		# number of trials per scenario
-		self.num_trials_per_scenario = 25
+		self.num_screens_per_scenario = 24
 		self.current_trial = 0
 
 		# number of different scenarios
-		self.num_scenarios = 3
 		self.current_scenario = None
 		self.scenario_names = ['odd_person_out', 'diff_gender', 'emotion']
+		self.num_scenarios = len(self.scenario_names)
 
 		# number of phases (without and with landmarks)
 		self.num_phases = 2
-		self.trials_per_phase = self.num_trials_per_scenario * self.num_scenarios
+		self.screens_per_phase = self.num_screens_per_scenario * self.num_scenarios
 		self.current_phase = 1
 
 		# emotions to test
-		self.emotions = ['NE', 'HA', 'SA', 'AN', 'FE', 'DI', 'SU', 'CO']
+		self.emotions = self.image_manager.get_emotions()
+
+		# start a position cycle function for each scenario
+		self.odd_person_out_cycle = _balanced_cycle()
+		self.diff_gender_cycle = _balanced_cycle()
+		self.emotion_cycle = _balanced_cycle()
+
+		# generate emotion tuples and create an iterator
+		self.emotion_tuples_iter = iter(self._generate_emotion_tuples())
 
 		# setup trial order
-		self.setup_trials()
+		self._setup_trials()
 
-	def setup_trials(self):
-		# fixed seed for consistency across subjects
-		random.seed(self.random_seed)
+	def _generate_emotion_tuples(self):
+		# create a balanced list of the correct answers
+		base, r = divmod(self.num_screens_per_scenario, len(self.emotions))
+		corrects = [e for e in self.emotions for _ in range(base)] + self.emotions[:r]
 
-		# create the requested number of trials for each scenario
+		# shuffle the list of correct answers
+		self.global_random.shuffle(corrects)
+
+		# create screen tuples
 		trials = []
+		for c in corrects:
+			# get the next position for the correct answer
+			p = next(self.emotion_cycle)
+
+			# sample 3 other emotions that are not the correct one
+			opts = random.sample([e for e in self.emotions if e != c], 3)
+
+			# insert the correct answer into the position that was randomly selected for the correct answer
+			opts.insert(p, c)
+
+			# create output tuple: (emotion1,emotion2,emotion3,emotion4,correct)
+			trials.append(tuple(opts + [c]))
+
+		return trials
+
+	def _setup_trials(self):
+		# initialize local output variables
+		phase_screens = []
+		phase_odd_person_out_people = []
+		phase_diff_gender_people = []
+		phase_emotions = []
+
+		# create the requested number of screens for each scenario
 		for scenario in range(0, self.num_scenarios):
-			for trial_num in range(self.num_trials_per_scenario):
-				trials.append(scenario)
+			for screen_num in range(self.num_screens_per_scenario):
 
-		# shuffle the order
-		random.shuffle(trials)
+				# add the screen number to the list of screens for this phase
+				phase_screens.append(scenario)
 
-		# duplicate for all phases
-		self.trial_sequence = trials * self.num_phases
+				# random generator for consistency across participants but variability between screens
+				local_random = random.Random(self.random_seed + screen_num)
 
-	def generate_odd_person_out_trial(self):
+				# if the scenario is odd person out, pick two different people
+				if scenario == Scenario.ODD_PERSON_OUT.value:
+					same_person, diff_person = local_random.sample(self.people, 2)
+					phase_odd_person_out_people.append((same_person, diff_person))
+				else:
+					phase_odd_person_out_people.append((None, None))
+
+				# if the scenario is a different gender, pick two different genders
+				if scenario == Scenario.DIFFERENT_GENDER.value:
+					# randomize majority gender
+					if random.choice([True, False]):
+						same_gender_person = local_random.sample(self.male_persons, 3)
+						diff_gender_person = local_random.sample(self.female_persons, 1)
+					else:
+						same_gender_person = local_random.sample(self.female_persons, 3)
+						diff_gender_person = local_random.sample(self.male_persons, 1)
+					phase_diff_gender_people.append((same_gender_person, diff_gender_person))
+				else:
+					phase_diff_gender_people.append((None, None))
+
+				# if the scenario is emotions, choose 4 emotions
+				if scenario == Scenario.EMOTION.value:
+					selected_emotions = next(self.emotion_tuples_iter)
+					phase_emotions.append(selected_emotions)
+				else:
+					phase_emotions.append([])
+
+		# create a vector the same length as the number of screens per phase
+		initial_order = list(range(0, self.screens_per_phase))
+
+		# copy the vector to shuffle the order of the trials for each phase
+		shuffled_order = initial_order.copy()
+
+		# shuffle the order of the trials for each phase
+		self.global_random.shuffle(shuffled_order)
+
+		# create a mapping of the shuffle
+		shuffle_mapping = {orig: shuffled_order.index(orig) for orig in initial_order}
+
+		# construct the trial sequence
+		for phase in range(0, self.num_phases):
+
+			# # reseed the random generator for each phase
+			# self.global_random.seed(self.random_seed + phase)
+
+			# shuffle the all structures according to the mapping
+			shuffled_phase_screens = [phase_screens[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
+			shuffled_phase_odd_person_out_people = [phase_odd_person_out_people[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
+			shuffled_phase_diff_gender_people = [phase_diff_gender_people[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
+			shuffled_phase_emotions = [phase_emotions[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
+
+			# add the phase screens to the trial sequence
+			self.trial_screens.extend(shuffled_phase_screens)
+			self.odd_person_out_people.extend(shuffled_phase_odd_person_out_people)
+			self.diff_gender_people.extend(shuffled_phase_diff_gender_people)
+			self.emotion_tuples.extend(shuffled_phase_emotions)
+
+	def _generate_odd_person_out_scenario(self):
 		"""Identify the different person (3 same + 1 different)"""
-		# if there are less than 2 people, we cannot generate this scenario
-		if len(self.persons) < 2:
-			return None
+		# initialize output
+		images_to_display = []
 
-		# select two people with minimal usage to maximize spread
-		min_count = min(self.person_usage_counts_odd_one_out.values())
-		least_used = [pid for pid, count in self.person_usage_counts_odd_one_out.items() if count == min_count]
+		# get the indices of the people for this screen number
+		same_person, diff_person = self.odd_person_out_people[self.current_trial]
 
-		# set deterministic random for consistent person selection between runs
-		rng = random.Random(self.random_seed)
-
-		# if we got less then two people with minimal usage, we need to pick two from the full pool
-		if len(least_used) < 2:
-			same_person, diff_person = rng.sample(self.persons, 2)
-
-		# otherwise, pick two from the least used people
-		else:
-			same_person, diff_person = rng.sample(least_used, 2)
-
-		# increment people's usage counts for the chosen people
-		self.person_usage_counts_odd_one_out[same_person] += 1
-		self.person_usage_counts_odd_one_out[diff_person] += 1
-
-		# get all the images of the same person
+		# get all the images of the same person and the other person
 		same_images = self.image_manager.get_person_images(same_person, exclude_session2=True)
-		if len(same_images) < 3:
-			return None
-
-		# get all the images of the different person
 		diff_images = self.image_manager.get_person_images(diff_person, exclude_session2=True)
-		if len(diff_images) < 1:
-			return None
 
-		# select 3 images for the same and one image for the different using global random
-		same_selected = random.sample(list(same_images.keys()), 3)
-		diff_selected = random.choice(list(diff_images.keys()))
+		# initialize local random generator
+		local_random = random.Random()
 
-		# create an image list
-		images = [same_images[key]['path'] for key in same_selected]
-		images.append(diff_images[diff_selected]['path'])
+		# randomly, select 3 images for the same person and one image for the different person
+		same_selected = local_random.sample(list(same_images.keys()), 3)
+		diff_selected = local_random.sample(list(diff_images.keys()), 1)
 
-		# shuffle images to randomize the position of the correct answer
-		images_combined = images[:]
-		random.shuffle(images_combined)
+		# generate a new local random generator
+		local_random = random.Random()
 
-		# get the index of the correct answer
-		correct_answer = images_combined.index(images[-1])
+		# shuffle the images of the same person
+		local_random.shuffle(same_selected)
+
+		# create an image list and add the images of the same person
+		images_to_display.extend([same_images[key]['path'] for key in same_selected])
+
+		# get the next position for the correct answer
+		correct_answer = next(self.odd_person_out_cycle)
+
+		# insert the different person into the position that was randomly selected for the correct answer
+		images_to_display.insert(correct_answer, diff_images[diff_selected[0]]['path'])
 
 		return {
-			'type': 'different_person',
-			'images': images_combined,
+			'type': 'odd_person_out',
+			'images': images_to_display,
 			'correct_answer': correct_answer,
 			'question': 'Which person is the odd one out?'
 		}
 
-	def generate_different_gender_trial(self):
+	def _generate_different_gender_scenario(self):
 		"""Identify the different gender (3 same gender + 1 different)."""
-		# we need at least 3 people of each gender for this scenario
-		if len(self.male_persons) < 3 or len(self.female_persons) < 3:
-			return None
+		# initialize output
+		images_to_display = []
 
-		# choose majority gender deterministically across runs
-		rng = random.Random(self.random_seed)
-		if rng.choice([True, False]):
+		# get the indices of the people for this screen number
+		same_gender_persons, diff_gender_person = self.diff_gender_people[self.current_trial]
 
-			# pick three males with minimal usage
-			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
-			least_used_males = [pid for pid in self.male_persons if
-								self.person_usage_counts_diff_gender[pid] == min_count]
-			same_gender_persons = rng.sample(least_used_males, 3)
+		# create a local random generator to pick different images and positions each time
+		local_random = random.Random()
 
-			# pick one female with minimal usage
-			min_count_f = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
-			least_used_females = [pid for pid in self.female_persons if
-								  self.person_usage_counts_diff_gender[pid] == min_count_f]
-			diff_gender_person = rng.choice(least_used_females)
+		# get the next position for the correct answer
+		correct_answer = next(self.diff_gender_cycle)
 
-		else:
-
-			# female majority - pick three females with minimal usage
-			min_count = min([self.person_usage_counts_diff_gender[pid] for pid in self.female_persons])
-			least_used_females = [pid for pid in self.female_persons if
-								  self.person_usage_counts_diff_gender[pid] == min_count]
-			same_gender_persons = rng.sample(least_used_females, 3)
-
-			# pick one male with minimal usage
-			min_count_m = min([self.person_usage_counts_diff_gender[pid] for pid in self.male_persons])
-			least_used_males = [pid for pid in self.male_persons if
-								self.person_usage_counts_diff_gender[pid] == min_count_m]
-			diff_gender_person = rng.choice(least_used_males)
-
-		# increment usage counts
-		for pid in same_gender_persons:
-			self.person_usage_counts_diff_gender[pid] += 1
-		self.person_usage_counts_diff_gender[diff_gender_person] += 1
-
-		# get one image from each person
-		images = []
+		# iterate over the same gender persons and select one image from each
 		for person in same_gender_persons:
 			person_images = self.image_manager.get_person_images(person, exclude_session2=True)
 			if person_images:
-				img_key = random.choice(list(person_images.keys()))
-				images.append(person_images[img_key]['path'])
+				img_key = local_random.choice(list(person_images.keys()))
+				images_to_display.append(person_images[img_key]['path'])
 
-		diff_images = self.image_manager.get_person_images(diff_gender_person, exclude_session2=True)
+		# shuffle the same gender images
+		local_random.shuffle(images_to_display)
+
+		# get the other person's images and select one image
+		diff_images = self.image_manager.get_person_images(diff_gender_person[0], exclude_session2=True)
 		if diff_images:
-			img_key = random.choice(list(diff_images.keys()))
-			images.append(diff_images[img_key]['path'])
+			img_key = local_random.choice(list(diff_images.keys()))
 
-		# ensure we end up with 4 images in the list
-		if len(images) != 4:
-			return None
+			# insert the different person into the position that was randomly selected for the correct answer
+			images_to_display.insert(correct_answer, diff_images[img_key]['path'])
 
-		# shuffle images using local seed (position needs to be shuffled differently each time)
-		images_combined = images[:]
-		random.shuffle(images_combined)
-
-		# get the index of the correct answer
-		correct_answer = images_combined.index(images[-1])
+		# correct_answer, images_to_display_shuffled = self._get_shuffled_correct_answer(images_to_display, original_correct_index=original_correct_answer)
 
 		return {
-			'type': 'gender',
-			'images': images_combined,
+			'type': 'diff_gender',
+			'images': images_to_display,
 			'correct_answer': correct_answer,
 			'question': 'Which person is a different gender?'
 		}
 
-	def generate_emotion_trial(self):
+	def _generate_emotion_scenario(self):
 		"""Identify a specific emotion."""
-		# initialize data structures
-		eligible_persons = []
-		person_emotion_data = {}
+		# initialize output
+		images_to_display = []
 
-		# iterate the people and find all people with at least 4 distinct emotions
-		for person in self.persons:
-			person_images = self.image_manager.get_person_images(person)
-			emotions = set()
-			emotion_images = {}
+		# get the emotions for this screen number
+		selected_emotions = self.emotion_tuples[self.current_trial]
 
-			for key, img_data in person_images.items():
-				# only use images that have pure letter emotions (not R/L/F orientations)
-				if re.match(r'^[A-Z]+$', img_data['suffix']) and not re.search(r'[RLF]', img_data['suffix']):
-					emotion = img_data['emotion']
-					emotions.add(emotion)
-					if emotion not in emotion_images:
-						emotion_images[emotion] = []
-					emotion_images[emotion].append(img_data['path'])
+		# create a local random generator to pick different images and positions each time
+		local_random = random.Random()
 
-					if emotion not in self.emotion_usage_counts:
-						self.emotion_usage_counts[emotion] = 0
+		# for each emotion, get all images of this emotion from all people with emotions
+		for emotion in selected_emotions[:4]:
 
-			# need at least 4 different emotions
-			if len(emotions) >= 4:
-				eligible_persons.append(person)
-				person_emotion_data[person] = emotion_images
-
-		# if there are no eligible persons, we cannot generate this scenario
-		if not eligible_persons:
-			return None
-
-		# use deterministic global seed for consistent emotion selection between runs
-		rng = random.Random(self.random_seed)
-
-		# select 4 least-used emotions deterministically
-		available_emotions = list({e for person in eligible_persons for e in person_emotion_data[person]})
-		available_emotions.sort(key=lambda e: self.emotion_usage_counts.get(e, 0))
-		if len(available_emotions) > 4:
-			selected_emotions = rng.sample(available_emotions, 4)
-		else:
-			selected_emotions = available_emotions
-
-		# select one image per emotion using local seed (image needs to be shuffled differently each time)
-		images = []
-		for emotion in selected_emotions:
+			# initialize candidate images for this emotion
 			candidate_imgs = []
-			for person in eligible_persons:
-				imgs = person_emotion_data[person].get(emotion, [])
+
+			# iterate over people with emotions
+			for person in self.people_with_emotions:
+
+				# get all images of this person with this emotion
+				imgs = self.image_manager.get_person_emotion_images(person).get(emotion, [])
+
+				# store images
 				candidate_imgs.extend(imgs)
-			if not candidate_imgs:
-				return None
-			chosen_img = random.choice(candidate_imgs)
-			images.append(chosen_img)
-			self.emotion_usage_counts[emotion] += 1
 
-		# select target emotion
-		target_emotion = random.choice(selected_emotions)
-		correct_answer = selected_emotions.index(target_emotion)
+			# choose one image at random from the candidates for this emotion
+			chosen_img = local_random.choice(candidate_imgs)
 
-		# map emotion codes
-		emotion_names = {
-			'NE': 'neutral',
-			'HA': 'happy',
-			'SA': 'sad',
-			'AN': 'angry',
-			'FE': 'fearful',
-			'DI': 'disgusted',
-			'SU': 'surprised',
-			'CO': 'confused'
-		}
-		target_emotion_name = emotion_names.get(target_emotion, target_emotion.lower())
+			# save the chosen image and update the usage count
+			images_to_display.append(chosen_img)
 
-		# shuffle images positions
-		positions = list(range(4))
-		random.shuffle(positions)
+		# the last emotion in the tuple is the correct answer
+		correct_emotion = selected_emotions[-1]
+
+		# get the full emotion name
+		correct_emotion_name = self.image_manager.get_emotions_dict().get(correct_emotion, correct_emotion.lower())
 
 		# get the index of the correct answer
-		correct_answer = positions.index(correct_answer)
-
-		reordered_images = [''] * 4
-		for i, pos in enumerate(positions):
-			reordered_images[i] = images[pos]
+		correct_answer= selected_emotions[:4].index(correct_emotion)
 
 		return {
 			'type': 'emotion',
-			'images': reordered_images,
+			'images': images_to_display,
 			'correct_answer': correct_answer,
-			'question': f'Which face looks {target_emotion_name}?'
+			'question': f'Which face looks {correct_emotion_name}?'
 		}
+
+	def advance_trial(self):
+		"""Move to the next trial."""
+		# update counter
+		self.current_trial += 1
+
+		# check if we need to move to phase 2
+		if self.current_trial == len(self.trial_screens) // 2 and self.current_phase == 1:
+			self.current_phase = 2
 
 	def get_next_trial(self) -> Optional[Dict]:
 		"""Get the next trial configuration."""
-		# check if we've reached the end of the trial sequence
-		if self.current_trial >= len(self.trial_sequence):
+		# check if we've reached the end of the trial
+		if self.current_trial >= len(self.trial_screens):
 			return None
 
 		# get the scenario number for the current trial
-		scenario_num = self.trial_sequence[self.current_trial]
+		scenario_num = self.trial_screens[self.current_trial]
 
 		# get the trial configuration for the current scenario
-		trial_config = None
-		if scenario_num == 0:
-			while trial_config is None:
-				trial_config = self.generate_odd_person_out_trial()
-		elif scenario_num == 1:
-			while trial_config is None:
-				trial_config = self.generate_different_gender_trial()
-		elif scenario_num == 2:
-			while trial_config is None:
-				trial_config = self.generate_emotion_trial()
+		if scenario_num == Scenario.ODD_PERSON_OUT.value:
+			trial_config = self._generate_odd_person_out_scenario()
+		elif scenario_num == Scenario.DIFFERENT_GENDER.value:
+			trial_config = self._generate_different_gender_scenario()
+		elif scenario_num == Scenario.EMOTION.value:
+			trial_config = self._generate_emotion_scenario()
 		else:
-			return None
+			raise Exception(f'No implementation for scenario number: {scenario_num}')
 
 		# add metadata
 		trial_config['scenario'] = scenario_num
@@ -340,24 +371,6 @@ class TrialManager:
 		}
 
 		self.results[phase_key][scenario_key].append(result)
-
-	def advance_trial(self):
-		"""Move to the next trial."""
-		self.current_trial += 1
-
-		# check if we need to move to phase 2
-		if self.current_trial == len(self.trial_sequence) // 2 and self.current_phase == 1:
-			# advance to phase 2
-			self.current_phase = 2
-
-			# reset counters for the second phase
-			self.person_usage_counts_odd_one_out = {pid: 0 for pid in self.persons}
-			self.person_usage_counts_diff_gender = {pid: 0 for pid in self.persons}
-			self.emotion_usage_counts = {}
-
-	def is_trial_complete(self) -> bool:
-		"""Check if all trials are complete."""
-		return self.current_trial >= len(self.trial_sequence)
 
 	def get_results_summary(self) -> Dict:
 		"""Get a summary of the results."""

@@ -176,6 +176,8 @@ class TrialGUI:
 
 		# get the next trial configuration
 		self.current_trial_config = self.trial_manager.get_next_trial()
+
+		# if there is no trial config, finish the trial
 		if not self.current_trial_config:
 			self.finish_trial()
 			return

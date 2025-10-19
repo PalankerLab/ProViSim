@@ -17,7 +17,31 @@ class ImageManager:
 
 		# initialize data structures to hold images
 		self.images_data = {}
+
+		# process the images and store in the data structures
 		self._load_images()
+
+		# initialize a list of ID's
+		self.all_people = list(self.images_data.keys())
+		self.people_with_emotions = []
+
+		# initialize emotions-related structures
+		self.emotions_dict = {
+			'NE': 'neutral',
+			'HA': 'happy',
+			'SA': 'sad',
+			'AN': 'angry',
+			'DI': 'disgusted',
+			'SU': 'surprised',
+			'CO': 'confused',
+			'FE': 'fearful'
+		}
+		self.available_emotions = []
+		self.images_data_emotions = {}
+
+		# organize and validate the loaded data
+		self._sort_image_data()
+
 
 	def _load_images(self):
 		"""Load and organize images by person, gender, orientation, and emotion."""
@@ -70,7 +94,7 @@ class ImageManager:
 						'images': {}
 					}
 
-				# use just the suffix as the key and add image
+				# use the suffix and photo session number as the key and add image
 				key = f'{session_num}_{suffix}'
 				self.images_data[person_id]['images'][key] = {
 					'path': img_path,
@@ -79,6 +103,55 @@ class ImageManager:
 					'session_num': session_num,
 					'suffix': suffix
 				}
+
+	def _sort_image_data(self):
+		# iterate the people, and if someone has less than three images available, remove them
+		for person_id, person_data in self.images_data.items():
+			if len(person_data['images']) < 3:
+				# remove the data
+				del self.images_data[person_id]
+
+				# remove the person from the list of people
+				self.all_people.remove(person_id)
+
+		# check that we have enough people to run the experiment
+		if len(self.all_people) < 10:
+			raise Exception('Not enough people in the dataset to run this experiment.')
+
+		# out of the remaining people, find those with at least four different emotions
+		for person in self.all_people:
+
+			# initialize structures for this person
+			emotions = set()
+			emotion_images = {}
+
+			# get the person's images
+			person_images = self.get_person_images(person)
+
+			# find images that have emotions
+			for key, img_data in person_images.items():
+				if img_data['suffix'] in self.emotions_dict.keys():
+					emotion = img_data['emotion']
+					emotions.add(emotion)
+
+					# if this emotion has not been added before for this person, initialize a list
+					if emotion not in emotion_images:
+						emotion_images[emotion] = []
+
+					# add the image path to the list for this emotion
+					emotion_images[emotion].append(img_data['path'])
+
+			# if this person has at least four different emotions, add them to the list
+			if len(emotions) >= 4:
+				self.people_with_emotions.append(person)
+				self.images_data_emotions[person] = emotion_images
+
+		# if there are not enough people with emotions, raise an exception
+		if len(self.people_with_emotions) < 1:
+			raise Exception('Not enough people with emotions in the dataset to run this experiment.')
+
+		# populate the list of all available emotions
+		self.available_emotions = list({e for person in self.people_with_emotions for e in self.images_data_emotions[person]})
 
 	@staticmethod
 	def _parse_orientation(orientation_str: str) -> str:
@@ -125,6 +198,7 @@ class ImageManager:
 
 	def get_person_images(self, person_id: str, exclude_session2: bool = False):
 		# get all the images of the required person
+		print(person_id)
 		images = self.images_data.get(person_id, {'images': {}})['images']
 
 		# filter out images with session_num == 2, if requested
@@ -132,6 +206,9 @@ class ImageManager:
 			images = {k: v for k, v in images.items() if v.get('session_num') != 2}
 
 		return images
+
+	def get_person_emotion_images(self, person_id: str) -> dict:
+		return self.images_data_emotions.get(person_id, {})
 
 	def get_persons_by_gender(self, gender: str) -> List[str]:
 		# get a list of person IDs by the requested gender
@@ -141,6 +218,15 @@ class ImageManager:
 		# get a list of all person IDs
 		return list(self.images_data.keys())
 
+	def get_people_with_emotions(self) -> List[str]:
+		return self.people_with_emotions
+
+	def get_emotions(self) -> List[str]:
+		return self.available_emotions
+
 	def get_person_gender(self, person_id: str) -> str:
 		# get the gender of the requested person
 		return self.images_data.get(person_id, {}).get('gender', 'Unknown')
+
+	def get_emotions_dict(self) -> dict:
+		return self.emotions_dict
