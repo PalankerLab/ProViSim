@@ -3,15 +3,17 @@ image_processing.py
 
 This module contains functions for processing images such as spatial filtering and contrast changing.
 """
-
 # standard imports
+import cv2
 import numpy as np
 from PIL import Image
-from skimage.filters import window
+import mediapipe as mp
 from typing import Union
+from typing import Optional
+from skimage.filters import window
 
 # project imports
-from utils import validate_gray_img
+from utils import validate_gray_img, crop_to_square
 
 
 def rgb_to_gray(img_input: Union[str, np.ndarray, Image.Image], invert_color: bool = False) -> np.ndarray:
@@ -240,3 +242,36 @@ def invert_black_and_white(image: np.ndarray) -> np.ndarray:
 
 	return swapped_image
 
+def is_face_dark(detector, image: np.ndarray, threshold: float = 120.0) -> Optional[bool]:
+	"""
+	Determine if a detected face is dark based on the given threshold, focusing on skin regions only.
+	"""
+	# crop square and convert for MediaPipe
+	image = crop_to_square(image)
+	mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image)
+
+	detection_result = detector.detect(mp_image)
+	if not detection_result.face_landmarks:
+		return None
+
+	landmarks = detection_result.face_landmarks[0]
+	h, w, _ = image.shape
+
+	# convert normalized landmarks to pixel coordinates
+	coords = np.array([(int(lm.x * w), int(lm.y * h)) for lm in landmarks])
+
+	# approximate skin region: cheeks + forehead + jaw
+	skin_indices = list(range(10, 338))
+
+	skin_points = coords[skin_indices]
+	mask = np.zeros((h, w), dtype=np.uint8)
+	cv2.fillPoly(mask, [skin_points], 255)
+
+	# convert to YCbCr and take Y channel
+	ycrcb = cv2.cvtColor(image, cv2.COLOR_RGB2YCrCb)
+	y_channel = ycrcb[:, :, 0]
+
+	# compute mean luminance over skin only
+	mean_y = np.mean(y_channel[mask == 255])
+
+	return mean_y < threshold

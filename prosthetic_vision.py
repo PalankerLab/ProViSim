@@ -68,7 +68,7 @@ def apply_prosthetic_vision(image, cutoff_frequency, gamma=None, gain=None, shif
 
 def apply_enhanced_prosthetic_vision(image, cutoff_frequency, gamma=None, gain=None, shift=None, show=False,
 									 landmarking=True, inverse_tone_curve=True, landmarking_color=None,
-									 invert_colors=False, detector=None):
+									 invert_colors=False, line_thickness_ratio=0.8, detector=None):
 
 	# initialize the preprocessed image
 	preprocessed_image = None
@@ -100,6 +100,7 @@ def apply_enhanced_prosthetic_vision(image, cutoff_frequency, gamma=None, gain=N
 			cutoff_frequency=cutoff_frequency,
 			show=show,
 			landmarking_color=landmarking_color,
+			line_thickness_ratio=line_thickness_ratio
 		)
 
 		# close detector if needed

@@ -28,9 +28,10 @@ class TrialManager:
 	def __init__(self, image_manager: ImageManager):
 		# initialize output
 		self.trial_screens = []
-		self.emotion_tuples = []
-		self.odd_person_out_people = []
-		self.diff_gender_people = []
+		self.odd_person_out_people_per_screen = []
+		self.diff_gender_people_per_screen = []
+		self.emotion_tuples_per_screen = []
+		self.emotion_people_per_screen = []
 
 		# initialize variables
 		self.results = {
@@ -46,18 +47,19 @@ class TrialManager:
 		self.image_manager = image_manager
 
 		# get all persons and initialize usage counts
-		self.people = self.image_manager.get_all_persons()
+		self.people = self.image_manager.get_all_people()
 
 		# get all persons by gender and initialize usage counts
-		self.male_persons = self.image_manager.get_persons_by_gender('M')
-		self.female_persons = self.image_manager.get_persons_by_gender('F')
+		self.males = self.image_manager.get_persons_by_gender('M')
+		self.females = self.image_manager.get_persons_by_gender('F')
 
-		# ensure there are at least 10 people and 3 people of each gender
-		if len(self.male_persons) < 3 or len(self.female_persons) < 3:
+		# ensure there are at least 3 people of each gender
+		if len(self.males) < 3 or len(self.females) < 3:
 			raise Exception('Not enough people in the dataset to run this experiment.')
 
-		# get people with emotions and initialize usage counts
-		self.people_with_emotions = self.image_manager.get_people_with_emotions()
+		# get people with and without emotions
+		self.people_with_emotions = self.image_manager.get_all_people_with_emotions()
+		self.people_without_emotions = self.image_manager.get_all_people_without_emotions()
 
 		# number of trials per scenario
 		self.num_screens_per_scenario = 24
@@ -88,11 +90,15 @@ class TrialManager:
 		self._setup_trials()
 
 	def _generate_emotion_tuples(self):
+		# sort list of emotions for consistency across participants
+		emotions = sorted(self.emotions)
+
 		# create a balanced list of the correct answers
-		base, r = divmod(self.num_screens_per_scenario, len(self.emotions))
-		corrects = [e for e in self.emotions for _ in range(base)] + self.emotions[:r]
+		base, r = divmod(self.num_screens_per_scenario, len(emotions))
+		corrects = [e for e in emotions for _ in range(base)] + emotions[:r]
 
 		# shuffle the list of correct answers
+		self.global_random.seed(self.random_seed)
 		self.global_random.shuffle(corrects)
 
 		# create screen tuples
@@ -102,7 +108,7 @@ class TrialManager:
 			p = next(self.emotion_cycle)
 
 			# sample 3 other emotions that are not the correct one
-			opts = random.sample([e for e in self.emotions if e != c], 3)
+			opts = self.global_random.sample([e for e in emotions if e != c], 3)
 
 			# insert the correct answer into the position that was randomly selected for the correct answer
 			opts.insert(p, c)
@@ -118,6 +124,7 @@ class TrialManager:
 		phase_odd_person_out_people = []
 		phase_diff_gender_people = []
 		phase_emotions = []
+		phase_emotions_people = []
 
 		# create the requested number of screens for each scenario
 		for scenario in range(0, self.num_scenarios):
@@ -129,9 +136,9 @@ class TrialManager:
 				# random generator for consistency across participants but variability between screens
 				local_random = random.Random(self.random_seed + screen_num)
 
-				# if the scenario is odd person out, pick two different people
+				# if the scenario is an odd person out, pick two different people
 				if scenario == Scenario.ODD_PERSON_OUT.value:
-					same_person, diff_person = local_random.sample(self.people, 2)
+					same_person, diff_person = local_random.sample(self.people_without_emotions, 2)
 					phase_odd_person_out_people.append((same_person, diff_person))
 				else:
 					phase_odd_person_out_people.append((None, None))
@@ -139,22 +146,52 @@ class TrialManager:
 				# if the scenario is a different gender, pick two different genders
 				if scenario == Scenario.DIFFERENT_GENDER.value:
 					# randomize majority gender
-					if random.choice([True, False]):
-						same_gender_person = local_random.sample(self.male_persons, 3)
-						diff_gender_person = local_random.sample(self.female_persons, 1)
+					if local_random.choice([True, False]):
+						same_gender_person = local_random.sample(self.males, 3)
+						diff_gender_person = local_random.sample(self.females, 1)
 					else:
-						same_gender_person = local_random.sample(self.female_persons, 3)
-						diff_gender_person = local_random.sample(self.male_persons, 1)
+						same_gender_person = local_random.sample(self.females, 3)
+						diff_gender_person = local_random.sample(self.males, 1)
 					phase_diff_gender_people.append((same_gender_person, diff_gender_person))
 				else:
 					phase_diff_gender_people.append((None, None))
 
 				# if the scenario is emotions, choose 4 emotions
 				if scenario == Scenario.EMOTION.value:
+
+					# get the next set of four emotions
 					selected_emotions = next(self.emotion_tuples_iter)
 					phase_emotions.append(selected_emotions)
+
+					# sort emotions to ensure consistency in images selected across participants
+					sorted_selected_emotions = sorted(selected_emotions[:4])
+
+					# create a mapping from original to sorted order
+					sorted_index_map = {e: i for i, e in enumerate(sorted_selected_emotions)}
+
+					# iterate over all emotions and for each emotion, randomize one person with this emotion
+					sorted_selected_people = []
+					for emotion in sorted_selected_emotions:
+						people_with_this_emotion = self.image_manager.get_people_with_specific_emotion(emotion)
+						selected_person = local_random.sample(people_with_this_emotion, 1)
+						sorted_selected_people.append(selected_person[0])
+
+					# remap people to the original order of emotions
+					selected_people = [sorted_selected_people[sorted_index_map[e]] for e in selected_emotions[:4]]
+
+					# add all the selected people
+					phase_emotions_people.append(selected_people)
+
 				else:
 					phase_emotions.append([])
+					phase_emotions_people.append([])
+
+		# print the lists before shuffling
+		print(f'phase_screens: {phase_screens}')
+		print(f'phase_odd_person_out_people: {phase_odd_person_out_people}')
+		print(f'phase_diff_gender_people: {phase_diff_gender_people}')
+		print(f'phase_emotions: {phase_emotions}')
+		print(f'phase_emotions_people: {phase_emotions_people}')
 
 		# create a vector the same length as the number of screens per phase
 		initial_order = list(range(0, self.screens_per_phase))
@@ -179,12 +216,14 @@ class TrialManager:
 			shuffled_phase_odd_person_out_people = [phase_odd_person_out_people[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
 			shuffled_phase_diff_gender_people = [phase_diff_gender_people[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
 			shuffled_phase_emotions = [phase_emotions[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
+			shuffled_phase_emotions_people = [phase_emotions_people[shuffle_mapping[i]] for i in range(self.screens_per_phase)]
 
 			# add the phase screens to the trial sequence
 			self.trial_screens.extend(shuffled_phase_screens)
-			self.odd_person_out_people.extend(shuffled_phase_odd_person_out_people)
-			self.diff_gender_people.extend(shuffled_phase_diff_gender_people)
-			self.emotion_tuples.extend(shuffled_phase_emotions)
+			self.odd_person_out_people_per_screen.extend(shuffled_phase_odd_person_out_people)
+			self.diff_gender_people_per_screen.extend(shuffled_phase_diff_gender_people)
+			self.emotion_tuples_per_screen.extend(shuffled_phase_emotions)
+			self.emotion_people_per_screen.extend(shuffled_phase_emotions_people)
 
 	def _generate_odd_person_out_scenario(self):
 		"""Identify the different person (3 same + 1 different)"""
@@ -192,23 +231,20 @@ class TrialManager:
 		images_to_display = []
 
 		# get the indices of the people for this screen number
-		same_person, diff_person = self.odd_person_out_people[self.current_trial]
+		same_person, diff_person = self.odd_person_out_people_per_screen[self.current_trial]
 
 		# get all the images of the same person and the other person
-		same_images = self.image_manager.get_person_images(same_person, exclude_session2=True)
-		diff_images = self.image_manager.get_person_images(diff_person, exclude_session2=True)
+		same_images = self.image_manager.get_person_emotion_free_images(same_person, exclude_session2=True)
+		diff_images = self.image_manager.get_person_emotion_free_images(diff_person, exclude_session2=True)
 
-		# initialize local random generator
-		local_random = random.Random()
+		# create a local random generator
+		local_random = random.Random(self.random_seed + self.current_trial)
 
 		# randomly, select 3 images for the same person and one image for the different person
 		same_selected = local_random.sample(list(same_images.keys()), 3)
 		diff_selected = local_random.sample(list(diff_images.keys()), 1)
 
-		# generate a new local random generator
-		local_random = random.Random()
-
-		# shuffle the images of the same person
+		# shuffle the images of the same person (local random)
 		local_random.shuffle(same_selected)
 
 		# create an image list and add the images of the same person
@@ -233,17 +269,17 @@ class TrialManager:
 		images_to_display = []
 
 		# get the indices of the people for this screen number
-		same_gender_persons, diff_gender_person = self.diff_gender_people[self.current_trial]
+		same_gender_persons, diff_gender_person = self.diff_gender_people_per_screen[self.current_trial]
 
 		# create a local random generator to pick different images and positions each time
-		local_random = random.Random()
+		local_random = random.Random(self.random_seed + self.current_trial)
 
 		# get the next position for the correct answer
 		correct_answer = next(self.diff_gender_cycle)
 
 		# iterate over the same gender persons and select one image from each
 		for person in same_gender_persons:
-			person_images = self.image_manager.get_person_images(person, exclude_session2=True)
+			person_images = self.image_manager.get_all_person_images(person, exclude_session2=True)
 			if person_images:
 				img_key = local_random.choice(list(person_images.keys()))
 				images_to_display.append(person_images[img_key]['path'])
@@ -252,7 +288,7 @@ class TrialManager:
 		local_random.shuffle(images_to_display)
 
 		# get the other person's images and select one image
-		diff_images = self.image_manager.get_person_images(diff_gender_person[0], exclude_session2=True)
+		diff_images = self.image_manager.get_all_person_images(diff_gender_person[0], exclude_session2=True)
 		if diff_images:
 			img_key = local_random.choice(list(diff_images.keys()))
 
@@ -274,30 +310,27 @@ class TrialManager:
 		images_to_display = []
 
 		# get the emotions for this screen number
-		selected_emotions = self.emotion_tuples[self.current_trial]
+		selected_emotions = self.emotion_tuples_per_screen[self.current_trial]
 
-		# create a local random generator to pick different images and positions each time
-		local_random = random.Random()
+		# get people selected for this screen number
+		selected_people = self.emotion_people_per_screen[self.current_trial]
+
+		# create a local random generator
+		local_random = random.Random(self.random_seed + self.current_trial)
 
 		# for each emotion, get all images of this emotion from all people with emotions
-		for emotion in selected_emotions[:4]:
+		for emotion, person in zip(selected_emotions[:4], selected_people):
 
-			# initialize candidate images for this emotion
-			candidate_imgs = []
+			# get all images of this person with this emotion
+			images_record_dict = self.image_manager.get_person_emotion_images(person).get(emotion, [])
 
-			# iterate over people with emotions
-			for person in self.people_with_emotions:
-
-				# get all images of this person with this emotion
-				imgs = self.image_manager.get_person_emotion_images(person).get(emotion, [])
-
-				# store images
-				candidate_imgs.extend(imgs)
+			# get images paths
+			image_paths = [img_data['path'] for img_data in images_record_dict.values()]
 
 			# choose one image at random from the candidates for this emotion
-			chosen_img = local_random.choice(candidate_imgs)
+			chosen_img = local_random.choice(image_paths)
 
-			# save the chosen image and update the usage count
+			# save the chosen image
 			images_to_display.append(chosen_img)
 
 		# the last emotion in the tuple is the correct answer

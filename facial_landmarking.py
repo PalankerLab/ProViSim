@@ -137,7 +137,7 @@ def get_center_iris(iris_frozen_set, idx_to_coordinates):
 	return center_of_iris.astype(np.uint8)
 
 
-def compute_line_thickness(img, cycles_per_img=10, ratio=1):
+def compute_line_thickness(img, cycles_per_img=10, ratio=0.8):
 	"""
 	Computes the line thickness to draw the facial features.
 
@@ -152,11 +152,8 @@ def compute_line_thickness(img, cycles_per_img=10, ratio=1):
 	# how many image pixels compose each implant pixel
 	image_pixels_per_implant_pixel = img.shape[0] / (2 * cycles_per_img)
 
-	# set minimum the line thickness as 0.8 implant pixels
-	minimum_line_thickness = 0.8 * image_pixels_per_implant_pixel
-
 	# apply ratio and round to integer
-	line_thickness = round(minimum_line_thickness * ratio)
+	line_thickness = round(image_pixels_per_implant_pixel * ratio)
 
 	# ensure at least 1 pixel thickness
 	return max(line_thickness, 1)
@@ -204,8 +201,65 @@ def create_lip_mask(face_image, lip_indices):
 	# Return an empty mask if no landmarks are detected
 	return np.zeros_like(face_image)
 
+def compute_lip_midline(points):
+	# computes the midline between outer and inner lip contours
+	if len(points) < 4:
+		return points
+	half = len(points) // 2
+	outer = points[:half]
+	inner = list(reversed(points[half:]))  # reverse so directions align
+	midline = []
+	for (ox, oy), (ix, iy) in zip(outer, inner):
+		mx = int((ox + ix) / 2)
+		my = int((oy + iy) / 2)
+		midline.append((mx, my))
+	return midline
 
-def safe_color_at(img, x, y):
+
+def connect_points(points):
+	# create line segments connecting consecutive points
+	segs = []
+	for i in range(len(points) - 1):
+		segs.append((points[i], points[i + 1]))
+	return segs
+
+
+def extract_lip_middle_from_mask(face_landmarks, image_h, image_w):
+	"""
+	Extracts the middle line of each lip (upper and lower) from facial landmarks
+	and returns line segments that follow the original contour of each lip.
+	"""
+	# initialize output
+	line_segments = []
+
+	# extract landmark coordinates
+	def get_points(indices):
+		points = []
+		for idx in indices:
+			if idx < len(face_landmarks):
+				points.append((
+					int(face_landmarks[idx].x * image_w),
+					int(face_landmarks[idx].y * image_h)
+				))
+		return points
+
+	upper_lip_points = get_points(UPPER_LIP_INDICES)
+	lower_lip_points = get_points(LOWER_LIP_INDICES)
+
+	# compute midlines
+	upper_midline = compute_lip_midline(upper_lip_points)
+	lower_midline = compute_lip_midline(lower_lip_points)
+
+	# connect consecutive points along the curve
+	if len(upper_midline) > 1:
+		line_segments += connect_points(upper_midline)
+	if len(lower_midline) > 1:
+		line_segments += connect_points(lower_midline)
+
+	return line_segments
+
+
+def safe_color_at(img, x, y, darker_factor=0.8):
 	"""
 	Sample color at (x,y) from an RGB image safely.
 	Returns (R,G,B) tuple.
@@ -213,7 +267,7 @@ def safe_color_at(img, x, y):
 	h, w, _ = img.shape
 	x = int(np.clip(x, 0, w - 1))
 	y = int(np.clip(y, 0, h - 1))
-	return tuple(int(c) for c in img[y, x])
+	return tuple(int(c * darker_factor) for c in img[y, x])
 
 
 def draw_colored_lines(dst_img, src_img, line_segments, thickness=2, landmarking_color=None):
@@ -230,7 +284,9 @@ def draw_colored_lines(dst_img, src_img, line_segments, thickness=2, landmarking
 	for (sx, sy), (ex, ey) in line_segments:
 		color_start = safe_color_at(src_img, sx, sy)
 		color_end = safe_color_at(src_img, ex, ey)
-		color_rgb = tuple((s + e) // 2 for s, e in zip(color_start, color_end)) if landmarking_color is None else landmarking_color
+		color_rgb = tuple(0.5 * (s + e) // 2 for s, e in zip(color_start, color_end)) if landmarking_color is None \
+			else (
+			landmarking_color)
 		cv2.line(dst_img, (sx, sy), (ex, ey), color=color_rgb, thickness=thickness)
 
 
@@ -246,7 +302,7 @@ def draw_colored_circles(dst_img, src_img, centers, radius=2, landmarking_color=
 		radius (int): Circle radius.
 	"""
 	for cx, cy in centers:
-		color_rgb = safe_color_at(src_img, cx, cy) if landmarking_color is None else landmarking_color
+		color_rgb = safe_color_at(src_img, cx, cy, 0.5) if landmarking_color is None else landmarking_color
 		cv2.circle(dst_img, (int(cx), int(cy)), radius=radius, color=color_rgb, thickness=-1)
 
 
@@ -272,6 +328,9 @@ def fill_region_with_color(dst_img, src_img, mask, landmarking_color=None):
 	if landmarking_color is None:
 		landmarking_color = np.round(region_pixels.mean(axis=0)).astype(np.uint8)
 
+		# make it slightly darker
+		landmarking_color = [int(c * 0.5) for c in landmarking_color]
+
 	# color destination image
 	dst_img[mask] = tuple(int(c) for c in landmarking_color)
 
@@ -283,7 +342,8 @@ def draw_facial_landmarks_colored(
 	draw_lips=True,
 	cutoff_frequency=10,
 	show=True,
-	landmarking_color=True
+	landmarking_color=True,
+	line_thickness_ratio=0.8
 ):
 	"""
 	Detects face landmarks and draws eyebrows, irises, and lips in their
@@ -353,11 +413,14 @@ def draw_facial_landmarks_colored(
 	center_left_iris = get_center_iris(FACEMESH_LEFT_IRIS, idx_to_coordinates)
 	center_right_iris = get_center_iris(FACEMESH_RIGHT_IRIS, idx_to_coordinates)
 
+	# compute the thickness for features
+	line_thickness = compute_line_thickness(face_image, cycles_per_img=cutoff_frequency, ratio=line_thickness_ratio)
+
 	# get the mask of the lips
 	lip_mask = create_lip_mask(face_image, LOWER_LIP_INDICES + UPPER_LIP_INDICES)
 
-	# compute the thickness for features
-	line_thickness = compute_line_thickness(face_image, cycles_per_img=cutoff_frequency)
+	# extract the middle lines of the lips
+	midline_lips = extract_lip_middle_from_mask(face_landmarks, h, w)
 
 	# draw the features
 	if draw_eyebrows:
@@ -369,7 +432,11 @@ def draw_facial_landmarks_colored(
 							 radius=line_thickness, landmarking_color=landmarking_color)
 
 	if draw_lips:
-		fill_region_with_color(face_image, np_image, lip_mask, landmarking_color=landmarking_color)
+		# draw middle lines of lips
+		draw_colored_lines(face_image, np_image, midline_lips, thickness=line_thickness, landmarking_color=landmarking_color)
+		
+		# # fill the entire lip region
+		# fill_region_with_color(face_image, np_image, lip_mask, landmarking_color=landmarking_color)
 
 	# show the result if requested
 	if show:

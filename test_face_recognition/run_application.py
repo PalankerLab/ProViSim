@@ -8,7 +8,7 @@ from PIL import Image, ImageTk
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-
+from image_processing import is_face_dark
 from prosthetic_vision import apply_enhanced_prosthetic_vision, apply_prosthetic_vision
 from test_face_recognition.image_manager import ImageManager
 from test_face_recognition.trial_manager import TrialManager
@@ -274,6 +274,21 @@ class TrialGUI:
 				else:
 					# process image using enhancements
 					if apply_enhancements:
+
+						# by default, use inverse tone curve
+						inverse_tone_curve = True
+						line_thickness_ratio = 0.4
+						landmarking_color = None
+
+						# check if the face is dark to adjust the enhancements
+						dark = is_face_dark(self.detector, img_array, threshold=90.0)
+
+						# if it is dark, do not run contrast correction and use thinner landmarking
+						if dark:
+							inverse_tone_curve = False
+							line_thickness_ratio = 0.8
+							landmarking_color = (10, 10, 10)
+
 						processed = apply_enhanced_prosthetic_vision(
 							img_array,
 							cutoff_frequency,
@@ -282,9 +297,10 @@ class TrialGUI:
 							shift=shift,
 							show=False,
 							landmarking=True,
-							inverse_tone_curve=True,
-							landmarking_color=(0, 0, 0),
+							inverse_tone_curve=inverse_tone_curve,
+							landmarking_color=landmarking_color,
 							invert_colors=False,
+							line_thickness_ratio=line_thickness_ratio,
 							detector=self.detector
 						)
 					# process with no enhancements
@@ -429,7 +445,7 @@ class TrialGUI:
 def main():
 	try:
 		root = tk.Tk()
-		TrialGUI(root, debug=False, disable_processing=False)
+		TrialGUI(root, debug=True, disable_processing=False)
 		root.mainloop()
 	except Exception as e:
 		print(f"Error: {e}")
