@@ -63,14 +63,20 @@ class TrialAnalysis:
 		# run paired t-tests
 		significance_dict = self._student_t_test()
 
-		# check the normality of the data
-		self._plot_distributions()
+		# # check the normality of the data
+		# self._plot_distributions()
 
 		# add boxplots that showcase the difference between before and after
 		self._add_boxplots(significance_dict)
 
 		# add bar charts
 		self._add_bar_charts()
+
+		# run paired t-test for happy emotion
+		significance_dict_happy = self.happy_emotion_ttest()
+
+		# plot happy emotion boxplot
+		self.happy_emotion_boxplot(significance_dict_happy)
 
 	def _pivot_data(self):
 		# pivot accuracy for side-by-side comparison
@@ -446,7 +452,7 @@ class TrialAnalysis:
 		ax.set_title("Accuracy With and Without Enhancements")
 		ax.legend(["Without Enhancements", "With Enhancements"])
 		ax.set_ylim(top=max_value * 1.1)
-		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # <- NEW: more y-axis ticks
+		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))
 		ax.grid(alpha=0.3)
 		plt.tight_layout()
 		plt.show()
@@ -512,6 +518,97 @@ class TrialAnalysis:
 		ax.grid(alpha=0.3)
 		plt.tight_layout()
 		plt.show()
+
+	def happy_emotion_ttest(self):
+		"""Perform a paired t-test for happy emotion accuracy across all participants from Detailed Results."""
+		all_records = []
+
+		# iterate through all result files
+		for file in glob.glob(self.folder):
+			match = re.search(r"results_(\d+)_(f|m)_(\d{8})_(\d+)\.xlsx", file, re.IGNORECASE)
+			if not match:
+				continue
+			subject_id, _, _, _ = match.groups()
+			df = pd.read_excel(file, sheet_name="Detailed Results")
+			df["Subject"] = subject_id
+			all_records.append(df)
+
+		# combine all participants
+		combined_df = pd.concat(all_records, ignore_index=True)
+
+		# filter only happy emotion trials
+		happy_df = combined_df[combined_df["question"].str.contains("happy", case=False)]
+
+		# pivot to get before/after per participant
+		pivot = happy_df.pivot_table(
+			index="Subject",
+			columns="phase",
+			values="correct"
+		).reset_index()
+
+		# Paired t-test
+		t_stat, p_val = ttest_rel(pivot[2], pivot[1])
+
+		# determine the significance
+		if p_val < 0.001:
+			sig = "***"
+		elif p_val < 0.01:
+			sig = "**"
+		elif p_val < 0.05:
+			sig = "*"
+		else:
+			sig = ""
+
+		result = {
+			"t_stat": t_stat,
+			"p_val": p_val,
+			"significance": sig,
+			"before": pivot[1],
+			"after": pivot[2]
+		}
+		return result
+
+	@staticmethod
+	def happy_emotion_boxplot(significance_dict):
+		"""Plot happy emotion accuracy before vs after with significance for all participants."""
+		before = significance_dict["before"]
+		after = significance_dict["after"]
+		sig = significance_dict["significance"]
+
+		data = [before, after]
+		labels = ["Without Enhancements", "With Enhancements"]
+		colors = ["tab:grey", "tab:pink"]
+
+		fig, ax = plt.subplots(figsize=(6, 6))
+		bp = ax.boxplot(data, patch_artist=True, labels=labels,
+						boxprops=dict(facecolor=colors[0], color=colors[0]),
+						medianprops=dict(color="black"))
+		for patch, color in zip(bp['boxes'], colors):
+			patch.set_facecolor(color)
+
+		# print statistics
+		print(f"\nHappy Emotion Accuracy (all participants):")
+		print(f"Without Enhancements - Mean: {before.mean():.2f}, Median: {before.median():.2f}")
+		print(f"With Enhancements    - Mean: {after.mean():.2f}, Median: {after.median():.2f}")
+		print(f"Paired t-test: t={significance_dict['t_stat']:.4f}, p={significance_dict['p_val']:.4f}, Significance: {sig}")
+
+		# determine y-limit to fit significance inside plot
+		max_val = max(after.max(), before.max())
+		ylim_top = max_val * 1.2
+		ax.set_ylim(0, ylim_top)
+		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))
+
+		# add significance star
+		ax.text(1.5, max(after.max(), before.max()) * 1.05, sig,
+				ha='center', va='bottom', fontsize=16, fontweight='bold')
+
+		ax.set_ylabel("Accuracy [%]")
+		ax.set_xticklabels(labels, rotation=30)
+		ax.set_title("Happy Emotion Accuracy With and Without Enhancements")
+		ax.grid(alpha=0.3)
+		plt.tight_layout()
+		plt.show()
+
 
 if __name__ == "__main__":
 	input_folder = os.path.join(os.getcwd(), "results")

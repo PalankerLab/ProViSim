@@ -30,8 +30,13 @@ class TrialGUI:
 		self.current_trial_config = None
 		self.trial_start_time = None
 		self.timeout_id = None
+		self.subject_entry = None
 		self.subject_id = ""
 		self.image_buttons = []
+
+		# initialize GUI labels used across functions
+		self.question_label = None
+		self.timer_label = None
 
 		# set debug flags
 		self.debug = debug
@@ -52,11 +57,37 @@ class TrialGUI:
 			num_faces=1
 		)
 
+		# define timeout
+		self.trial_timeout_sec = 20
+
 		# create the detector
 		self.detector = vision.FaceLandmarker.create_from_options(options)
 
 		# create the setup screen
 		self.create_setup_screen()
+
+	def update_timer(self, total_time, first_call=True):
+		# on first call, show full duration
+		if first_call:
+			self.timer_label.config(text=str(total_time))
+			self.root.after(250, lambda: self.update_timer(total_time, first_call=False))
+			return
+
+		# compute remaining time (rounded)
+		elapsed = time.time() - self.trial_start_time
+		remaining = round(total_time - elapsed)
+
+		# if time is up, trigger timeout without showing 0
+		if remaining <= 0:
+			self.timer_label.config(text="")
+			self.timeout_trial()
+			return
+
+		# update the label
+		self.timer_label.config(text=str(remaining))
+
+		# continue updating
+		self.root.after(250, lambda: self.update_timer(total_time, first_call=False))
 
 	def create_setup_screen(self):
 		# clear the root
@@ -119,6 +150,12 @@ class TrialGUI:
 			frame, text="", font=("Arial", 18, "bold"), bg="white"
 		)
 		self.question_label.grid(row=0, column=0, columnspan=2, sticky="nsew")
+
+		# crate a timer label
+		self.timer_label = tk.Label(
+			frame, text="", font=("Arial", 18), bg="white", fg="red"
+		)
+		self.timer_label.grid(row=0, column=1, sticky="ne", padx=20, pady=10)
 
 		# create an image grid (2x2)
 		grid = tk.Frame(frame, bg="white")
@@ -185,14 +222,20 @@ class TrialGUI:
 		# display a new question
 		self.question_label.config(text=self.current_trial_config["question"])
 
+		# reset the timer label
+		self.timer_label.config(text=str(self.trial_timeout_sec))
+
 		# load the images
 		self.load_images()
 
 		# start timer
 		self.trial_start_time = time.time()
 
+		# start countdown update
+		self.update_timer(self.trial_timeout_sec)
+
 		# timeout trial after 20 seconds
-		self.timeout_id = self.root.after(20000, self.timeout_trial)
+		self.timeout_id = self.root.after(self.trial_timeout_sec * 1000, self.timeout_trial)
 
 	def load_images(self):
 		# define common parameters
@@ -275,18 +318,18 @@ class TrialGUI:
 					# process image using enhancements
 					if apply_enhancements:
 
-						# by default, use inverse tone curve
+						# by default, apply the inverse tone curve
 						inverse_tone_curve = True
-						line_thickness_ratio = 0.4
+						line_thickness_ratio = 0.3
 						landmarking_color = None
 
 						# check if the face is dark to adjust the enhancements
-						dark = is_face_dark(self.detector, img_array, threshold=90.0)
+						dark = is_face_dark(self.detector, img_array, threshold=106.0)
 
 						# if it is dark, do not run contrast correction and use thinner landmarking
 						if dark:
 							inverse_tone_curve = False
-							line_thickness_ratio = 0.8
+							line_thickness_ratio = 0.6
 							landmarking_color = (10, 10, 10)
 
 						processed = apply_enhanced_prosthetic_vision(
@@ -445,7 +488,7 @@ class TrialGUI:
 def main():
 	try:
 		root = tk.Tk()
-		TrialGUI(root, debug=True, disable_processing=False)
+		TrialGUI(root, debug=False, disable_processing=False)
 		root.mainloop()
 	except Exception as e:
 		print(f"Error: {e}")
