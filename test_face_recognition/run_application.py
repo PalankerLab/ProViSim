@@ -324,12 +324,12 @@ class TrialGUI:
 						landmarking_color = None
 
 						# check if the face is dark to adjust the enhancements
-						dark = is_face_dark(self.detector, img_array, threshold=106.0)
+						dark = is_face_dark(self.detector, img_array, threshold=100.0)
 
 						# if it is dark, do not run contrast correction and use thinner landmarking
 						if dark:
 							inverse_tone_curve = False
-							line_thickness_ratio = 0.6
+							line_thickness_ratio = 0.5
 							landmarking_color = (10, 10, 10)
 
 						processed = apply_enhanced_prosthetic_vision(

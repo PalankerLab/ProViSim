@@ -15,7 +15,7 @@ device (Science Corp., Alameda, CA).
 
 
 The library is implemented in Python and intended to be interfaced via Google Colab or Jupyter Notebook. The following
-[**link**](https://colab.research.google.com/drive/1X1pWk6_sccSkBKABclw5VDRAn7dQK_UT?usp=sharing) will take you to 
+[**link**](https://colab.research.google.com/drive/144FEvbHMFeNgmnF36kSChYyoYlsYoBLw?usp=sharing) will take you to 
 the Google Colab notebook where you can run the code directly without any installations. This notebook is open to the 
 public in view mode, so in order to edit it, please copy it to your Google Drive and run it in your own environment.
 You can also clone the repository and run the code locally using the local Jupyter Notebook that comes with the 
@@ -28,6 +28,10 @@ http://www.tarrlab.org/. Funding provided by NSF award 0339122.
 
 The face landmarking algorithm used is the open-source, real-time [MediaPipe Face Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/python) machine learning model 
 from Google. 
+
+The text recognition algorithm used is the open-source EasyOCR (https://github.com/JaidedAI/EasyOCR) which uses the 
+pretrained CRAFT model (https://github.com/clovaai/CRAFT-pytorch).
+
 
 ## Library Overview
 

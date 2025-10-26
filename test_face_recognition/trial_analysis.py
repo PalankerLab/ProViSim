@@ -72,11 +72,13 @@ class TrialAnalysis:
 		# add bar charts
 		self._add_bar_charts()
 
-		# run paired t-test for happy emotion
-		significance_dict_happy = self.happy_emotion_ttest()
+		# analyze specific emotions
+		for emotion in ["happy", "sad", "confused", "neutral", "disgusted", "fearful", "surprised", "angry"]:
+			# run a paired t-test for this emotion
+			significance_dict_emotion = self.specific_emotion_ttest(emotion)
 
-		# plot happy emotion boxplot
-		self.happy_emotion_boxplot(significance_dict_happy)
+			# plot this emotion's boxplot
+			self.specific_emotion_boxplot(significance_dict_emotion, emotion)
 
 	def _pivot_data(self):
 		# pivot accuracy for side-by-side comparison
@@ -449,7 +451,7 @@ class TrialAnalysis:
 		ax.set_xticks(x_positions + bar_width / 2)
 		ax.set_xticklabels(scenarios, rotation=30)
 		ax.set_ylabel("Accuracy [%]")
-		ax.set_title("Accuracy With and Without Enhancements")
+		ax.set_title("Accuracy")
 		ax.legend(["Without Enhancements", "With Enhancements"])
 		ax.set_ylim(top=max_value * 1.1)
 		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))
@@ -511,7 +513,7 @@ class TrialAnalysis:
 		ax.set_xticks(x_positions + bar_width / 2)
 		ax.set_xticklabels(scenarios, rotation=30)
 		ax.set_ylabel("Average response time [s]")
-		ax.set_title("Average Response Time With and Without Enhancements")
+		ax.set_title("Average Response Time")
 		ax.legend(["Without Enhancements", "With Enhancements"])
 		ax.set_ylim(top=max_value * 1.1)
 		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # <- NEW: more y-axis ticks
@@ -519,7 +521,7 @@ class TrialAnalysis:
 		plt.tight_layout()
 		plt.show()
 
-	def happy_emotion_ttest(self):
+	def specific_emotion_ttest(self, emotion):
 		"""Perform a paired t-test for happy emotion accuracy across all participants from Detailed Results."""
 		all_records = []
 
@@ -537,7 +539,7 @@ class TrialAnalysis:
 		combined_df = pd.concat(all_records, ignore_index=True)
 
 		# filter only happy emotion trials
-		happy_df = combined_df[combined_df["question"].str.contains("happy", case=False)]
+		happy_df = combined_df[combined_df["question"].str.contains(emotion, case=False)]
 
 		# pivot to get before/after per participant
 		pivot = happy_df.pivot_table(
@@ -546,7 +548,7 @@ class TrialAnalysis:
 			values="correct"
 		).reset_index()
 
-		# Paired t-test
+		# paired t-test
 		t_stat, p_val = ttest_rel(pivot[2], pivot[1])
 
 		# determine the significance
@@ -569,10 +571,10 @@ class TrialAnalysis:
 		return result
 
 	@staticmethod
-	def happy_emotion_boxplot(significance_dict):
+	def specific_emotion_boxplot(significance_dict, emotion):
 		"""Plot happy emotion accuracy before vs after with significance for all participants."""
-		before = significance_dict["before"]
-		after = significance_dict["after"]
+		before = significance_dict["before"] * 100
+		after = significance_dict["after"] * 100
 		sig = significance_dict["significance"]
 
 		data = [before, after]
@@ -587,7 +589,7 @@ class TrialAnalysis:
 			patch.set_facecolor(color)
 
 		# print statistics
-		print(f"\nHappy Emotion Accuracy (all participants):")
+		print(f"\n{str.capitalize(emotion)} Emotion Accuracy (all participants):")
 		print(f"Without Enhancements - Mean: {before.mean():.2f}, Median: {before.median():.2f}")
 		print(f"With Enhancements    - Mean: {after.mean():.2f}, Median: {after.median():.2f}")
 		print(f"Paired t-test: t={significance_dict['t_stat']:.4f}, p={significance_dict['p_val']:.4f}, Significance: {sig}")
@@ -604,7 +606,9 @@ class TrialAnalysis:
 
 		ax.set_ylabel("Accuracy [%]")
 		ax.set_xticklabels(labels, rotation=30)
-		ax.set_title("Happy Emotion Accuracy With and Without Enhancements")
+		ax.set_yticks([10 * i for i in range(1, 11)])
+		ax.set_ylabel("Accuracy [%]")
+		ax.set_title(f"{str.capitalize(emotion)} Emotion Accuracy")
 		ax.grid(alpha=0.3)
 		plt.tight_layout()
 		plt.show()

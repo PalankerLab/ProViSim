@@ -186,13 +186,6 @@ class TrialManager:
 					phase_emotions.append([])
 					phase_emotions_people.append([])
 
-		# print the lists before shuffling
-		print(f'phase_screens: {phase_screens}')
-		print(f'phase_odd_person_out_people: {phase_odd_person_out_people}')
-		print(f'phase_diff_gender_people: {phase_diff_gender_people}')
-		print(f'phase_emotions: {phase_emotions}')
-		print(f'phase_emotions_people: {phase_emotions_people}')
-
 		# create a vector the same length as the number of screens per phase
 		initial_order = list(range(0, self.screens_per_phase))
 
