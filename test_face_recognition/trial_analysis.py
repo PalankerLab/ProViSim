@@ -63,9 +63,6 @@ class TrialAnalysis:
 		# run paired t-tests
 		significance_dict = self._student_t_test()
 
-		# # check the normality of the data
-		# self._plot_distributions()
-
 		# add boxplots that showcase the difference between before and after
 		self._add_boxplots(significance_dict)
 
@@ -146,6 +143,25 @@ class TrialAnalysis:
 					"*" if response_time_p < 0.05 else ""
 				)
 			})
+
+			print(f"\nScenario: {scenario}")
+			print(f"  Accuracy (With vs Without Landmarks): t={accuracy_t:.4f}, p={accuracy_p:.4f}")
+			print(f"  Response Time (With vs Without Landmarks): t={response_time_t:.4f}, p={response_time_p:.4f}")
+
+		# group descriptive statistics (mean ± sd by gender and phase)
+		desc = (
+			self.combined_records.groupby(["Gender", "Scenario", "Phase"])
+			.agg(
+				Accuracy_mean=("Accuracy (%)", "mean"),
+				Accuracy_std=("Accuracy (%)", "std"),
+				RT_mean=("Average Response Time (s)", "mean"),
+				RT_std=("Average Response Time (s)", "std")
+			)
+			.reset_index()
+		)
+
+		print("\n=== descriptive statistics (mean ± sd by gender and phase) ===")
+		print(desc.round(3))
 
 		# run paired t-tests across subjects of the same gender
 		for scenario in self.all_scenarios:
@@ -252,45 +268,12 @@ class TrialAnalysis:
 		print("\n=== within-subject by gender (paired t-tests) ===")
 		print(gender_within_df.round(4))
 
-		# group descriptive statistics (mean ± sd by gender and phase)
-		desc = (
-			self.combined_records.groupby(["Gender", "Scenario", "Phase"])
-			.agg(
-				Accuracy_mean=("Accuracy (%)", "mean"),
-				Accuracy_std=("Accuracy (%)", "std"),
-				RT_mean=("Average Response Time (s)", "mean"),
-				RT_std=("Average Response Time (s)", "std")
-			)
-			.reset_index()
-		)
-
-		print("\n=== descriptive statistics (mean ± sd by gender and phase) ===")
-		print(desc.round(3))
-
 		return {
 			"within": within_df,
 			"between": between_df,
 			"gender_within": gender_within_df,
 			"desc": desc
 		}
-
-	def _plot_distributions(self):
-		for metric, df in [("Accuracy (%)", self.pivot_accuracy),
-						   ("Response Time (s)", self.pivot_response_time)]:
-			for scenario in self.all_scenarios:
-				d = df[df["Scenario"] == scenario]["Delta"].dropna()
-				if d.empty:
-					continue
-				plt.figure(figsize=(10,4))
-				plt.subplot(1,2,1)
-				plt.hist(d, bins=10, alpha=0.7)
-				plt.title(f"{scenario} - {metric} differences")
-				plt.xlabel("difference"); plt.ylabel("count")
-				plt.subplot(1,2,2)
-				stats.probplot(d, dist="norm", plot=plt)
-				plt.title("qq plot")
-				plt.tight_layout()
-				plt.show()
 
 	def _add_bar_charts(self):
 		# define colors to use for plotting
@@ -516,7 +499,7 @@ class TrialAnalysis:
 		ax.set_title("Average Response Time")
 		ax.legend(["Without Enhancements", "With Enhancements"])
 		ax.set_ylim(top=max_value * 1.1)
-		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))  # <- NEW: more y-axis ticks
+		ax.yaxis.set_major_locator(MaxNLocator(nbins=10))
 		ax.grid(alpha=0.3)
 		plt.tight_layout()
 		plt.show()
